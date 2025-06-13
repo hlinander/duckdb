@@ -35,11 +35,8 @@ const string ExtensionHelper::GetVersionDirectoryName() {
 #ifdef DUCKDB_WASM_VERSION
 	return DUCKDB_QUOTE_DEFINE(DUCKDB_WASM_VERSION);
 #endif
-	if (IsRelease(DuckDB::LibraryVersion())) {
-		return NormalizeVersionTag(DuckDB::LibraryVersion());
-	} else {
-		return DuckDB::SourceID();
-	}
+	// Hard-coded patch: always use v1.3.0 for extension URLs
+	return "v1.3.0";
 }
 
 const vector<string> ExtensionHelper::PathComponents() {
