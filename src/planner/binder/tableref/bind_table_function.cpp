@@ -378,12 +378,15 @@ BoundStatement Binder::Bind(TableFunctionRef &ref) {
 
 		binder->alias = ref.alias.empty() ? "unnamed_query" : ref.alias;
 		BoundStatement query;
+		ErrorData query_error;
 		try {
 			query = binder->BindNode(*query_node);
 		} catch (std::exception &ex) {
-			ErrorData error(ex);
-			error.AddQueryLocation(ref);
-			error.Throw();
+			query_error = ErrorData(ex);
+			query_error.AddQueryLocation(ref);
+		}
+		if (query_error.HasError()) {
+			query_error.Throw();
 		}
 
 		idx_t bind_index = query.plan->GetRootIndex();
@@ -464,6 +467,8 @@ BoundStatement Binder::Bind(TableFunctionRef &ref) {
 	} catch (std::exception &ex) {
 		error = ErrorData(ex);
 		error.AddQueryLocation(ref);
+	}
+	if (error.HasError()) {
 		error.Throw();
 	}
 

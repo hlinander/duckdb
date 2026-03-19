@@ -698,6 +698,7 @@ vector<unique_ptr<SQLStatement>> ClientContext::ParseStatements(const string &qu
 }
 
 vector<unique_ptr<SQLStatement>> ClientContext::ParseStatementsInternal(ClientContextLock &lock, const string &query) {
+	ErrorData error;
 	try {
 		Parser parser(GetParserOptions());
 		parser.ParseQuery(query);
@@ -710,10 +711,10 @@ vector<unique_ptr<SQLStatement>> ClientContext::ParseStatementsInternal(ClientCo
 
 		return std::move(parser.statements);
 	} catch (std::exception &ex) {
-		auto error = ErrorData(ex);
+		error = ErrorData(ex);
 		ProcessError(error, query);
-		error.Throw();
 	}
+	error.Throw();
 }
 
 void ClientContext::PreprocessStatements(vector<unique_ptr<SQLStatement>> &statements) {
