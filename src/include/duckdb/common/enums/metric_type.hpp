@@ -32,6 +32,7 @@ enum class MetricGroup : uint8_t {
 enum class MetricType : uint8_t {
 	// Core metrics
 	CPU_TIME = 2,
+	CPU_TIME_ACTUAL = 100,
 	CUMULATIVE_CARDINALITY = 4,
 	CUMULATIVE_ROWS_SCANNED = 7,
 	EXTRA_INFO = 3,
@@ -56,6 +57,7 @@ enum class MetricType : uint8_t {
 	WRITE_TO_WAL_LATENCY = 98,
 	// Operator metrics
 	OPERATOR_CARDINALITY = 6,
+	OPERATOR_CPU_TIME = 99,
 	OPERATOR_NAME = 13,
 	OPERATOR_ROWS_SCANNED = 8,
 	OPERATOR_TIMING = 9,

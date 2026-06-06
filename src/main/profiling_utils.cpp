@@ -59,8 +59,10 @@ void ProfilingUtils::SetMetricToDefault(profiler_metrics_t &metrics, const Metri
 	case MetricType::CHECKPOINT_LATENCY:
 	case MetricType::COMMIT_LOCAL_STORAGE_LATENCY:
 	case MetricType::CPU_TIME:
+	case MetricType::CPU_TIME_ACTUAL:
 	case MetricType::CUMULATIVE_OPTIMIZER_TIMING:
 	case MetricType::LATENCY:
+	case MetricType::OPERATOR_CPU_TIME:
 	case MetricType::OPERATOR_TIMING:
 	case MetricType::PHYSICAL_PLANNER:
 	case MetricType::PHYSICAL_PLANNER_COLUMN_BINDING:
@@ -110,8 +112,10 @@ void ProfilingUtils::MetricToJson(duckdb_yyjson::yyjson_mut_doc *doc, duckdb_yyj
 	case MetricType::CHECKPOINT_LATENCY:
 	case MetricType::COMMIT_LOCAL_STORAGE_LATENCY:
 	case MetricType::CPU_TIME:
+	case MetricType::CPU_TIME_ACTUAL:
 	case MetricType::CUMULATIVE_OPTIMIZER_TIMING:
 	case MetricType::LATENCY:
+	case MetricType::OPERATOR_CPU_TIME:
 	case MetricType::OPERATOR_TIMING:
 	case MetricType::PHYSICAL_PLANNER:
 	case MetricType::PHYSICAL_PLANNER_COLUMN_BINDING:
@@ -155,6 +159,9 @@ void ProfilingUtils::CollectMetrics(const MetricType &type, QueryMetrics &query_
 	switch(type) {
 	case MetricType::CPU_TIME:
 		GetCumulativeMetric<double>(node, MetricType::CPU_TIME, MetricType::OPERATOR_TIMING);
+		break;
+	case MetricType::CPU_TIME_ACTUAL:
+		GetCumulativeMetric<double>(node, MetricType::CPU_TIME_ACTUAL, MetricType::OPERATOR_CPU_TIME);
 		break;
 	case MetricType::CUMULATIVE_CARDINALITY:
 		GetCumulativeMetric<uint64_t>(node, MetricType::CUMULATIVE_CARDINALITY, MetricType::OPERATOR_CARDINALITY);
