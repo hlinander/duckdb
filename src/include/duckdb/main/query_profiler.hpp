@@ -46,6 +46,7 @@ struct OperatorInformation {
 	string name;
 
 	double time = 0;
+	double cpu_time = 0;
 	idx_t elements_returned = 0;
 	idx_t result_set_size = 0;
 	idx_t system_peak_buffer_manager_memory = 0;
@@ -61,6 +62,9 @@ struct OperatorInformation {
 		switch (type) {
 		case MetricType::OPERATOR_TIMING:
 			time += metric;
+			break;
+		case MetricType::OPERATOR_CPU_TIME:
+			cpu_time += metric;
 			break;
 		case MetricType::OPERATOR_CARDINALITY:
 			elements_returned += LossyNumericCast<idx_t>(metric);
@@ -127,6 +131,8 @@ private:
 
 	//! The timer used to time the execution time of the individual Physical Operators
 	Profiler op;
+	//! Thread CPU time profiler for measuring actual CPU time per operator
+	ThreadCPUProfiler cpu_op;
 	//! The stack of Physical Operators that are currently active
 	optional_ptr<const PhysicalOperator> active_operator;
 	//! A mapping of physical operators to profiled operator information.

@@ -99,6 +99,16 @@
         "query_root": true,
         "collection_method": "child",
         "child": "OPERATOR_CARDINALITY"
+      },
+      {
+        "name": "CPU_TIME_ACTUAL",
+        "enum_value": 105,
+        "description": "Actual accumulated CPU time spent on the query",
+        "type": "double",
+        "unit": "seconds",
+        "is_default": true,
+        "collection_method": "cumulative",
+        "child": "OPERATOR_CPU_TIME"
       }
     ]
   },
@@ -366,6 +376,14 @@
         "type": "uint64",
         "unit": "absolute",
         "is_default": false
+      },
+      {
+        "name": "OPERATOR_CPU_TIME",
+        "enum_value": 104,
+        "description": "Actual CPU time spent in the operator",
+        "type": "double",
+        "unit": "seconds",
+        "is_default": true
       }
     ]
   },

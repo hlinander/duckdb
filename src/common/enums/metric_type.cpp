@@ -15,6 +15,7 @@ profiler_settings_t MetricsUtils::GetAllMetrics() {
 		MetricType::CHECKPOINT_LATENCY,
 		MetricType::COMMIT_LOCAL_STORAGE_LATENCY,
 		MetricType::CPU_TIME,
+		MetricType::CPU_TIME_ACTUAL,
 		MetricType::CUMULATIVE_CARDINALITY,
 		MetricType::CUMULATIVE_OPTIMIZER_TIMING,
 		MetricType::CUMULATIVE_ROWS_SCANNED,
@@ -24,6 +25,7 @@ profiler_settings_t MetricsUtils::GetAllMetrics() {
 		MetricType::EXTRA_INFO,
 		MetricType::LATENCY,
 		MetricType::OPERATOR_CARDINALITY,
+		MetricType::OPERATOR_CPU_TIME,
 		MetricType::OPERATOR_NAME,
 		MetricType::OPERATOR_ROWS_SCANNED,
 		MetricType::OPERATOR_ROW_GROUPS_SCANNED,
@@ -109,6 +111,7 @@ profiler_settings_t MetricsUtils::GetMetricsByGroupType(MetricGroup type) {
 profiler_settings_t MetricsUtils::GetCoreMetrics() {
 	return {
 		MetricType::CPU_TIME,
+		MetricType::CPU_TIME_ACTUAL,
 		MetricType::CUMULATIVE_CARDINALITY,
 		MetricType::CUMULATIVE_ROWS_SCANNED,
 		MetricType::CUMULATIVE_ROW_GROUPS_SCANNED,
@@ -124,6 +127,7 @@ profiler_settings_t MetricsUtils::GetCoreMetrics() {
 bool MetricsUtils::IsCoreMetric(MetricType type) {
 	switch(type) {
 	case MetricType::CPU_TIME:
+	case MetricType::CPU_TIME_ACTUAL:
 	case MetricType::CUMULATIVE_CARDINALITY:
 	case MetricType::CUMULATIVE_ROWS_SCANNED:
 	case MetricType::CUMULATIVE_ROW_GROUPS_SCANNED:
@@ -147,11 +151,13 @@ profiler_settings_t MetricsUtils::GetDefaultMetrics() {
 		MetricType::CHECKPOINT_LATENCY,
 		MetricType::COMMIT_LOCAL_STORAGE_LATENCY,
 		MetricType::CPU_TIME,
+		MetricType::CPU_TIME_ACTUAL,
 		MetricType::CUMULATIVE_CARDINALITY,
 		MetricType::CUMULATIVE_ROWS_SCANNED,
 		MetricType::EXTRA_INFO,
 		MetricType::LATENCY,
 		MetricType::OPERATOR_CARDINALITY,
+		MetricType::OPERATOR_CPU_TIME,
 		MetricType::OPERATOR_NAME,
 		MetricType::OPERATOR_ROWS_SCANNED,
 		MetricType::OPERATOR_TIMING,
@@ -178,11 +184,13 @@ bool MetricsUtils::IsDefaultMetric(MetricType type) {
 	case MetricType::CHECKPOINT_LATENCY:
 	case MetricType::COMMIT_LOCAL_STORAGE_LATENCY:
 	case MetricType::CPU_TIME:
+	case MetricType::CPU_TIME_ACTUAL:
 	case MetricType::CUMULATIVE_CARDINALITY:
 	case MetricType::CUMULATIVE_ROWS_SCANNED:
 	case MetricType::EXTRA_INFO:
 	case MetricType::LATENCY:
 	case MetricType::OPERATOR_CARDINALITY:
+	case MetricType::OPERATOR_CPU_TIME:
 	case MetricType::OPERATOR_NAME:
 	case MetricType::OPERATOR_ROWS_SCANNED:
 	case MetricType::OPERATOR_TIMING:
@@ -261,6 +269,7 @@ bool MetricsUtils::IsFileMetric(MetricType type) {
 profiler_settings_t MetricsUtils::GetOperatorMetrics() {
 	return {
 		MetricType::OPERATOR_CARDINALITY,
+		MetricType::OPERATOR_CPU_TIME,
 		MetricType::OPERATOR_NAME,
 		MetricType::OPERATOR_ROWS_SCANNED,
 		MetricType::OPERATOR_ROW_GROUPS_SCANNED,
@@ -273,6 +282,7 @@ profiler_settings_t MetricsUtils::GetOperatorMetrics() {
 bool MetricsUtils::IsOperatorMetric(MetricType type) {
 	switch(type) {
 	case MetricType::OPERATOR_CARDINALITY:
+	case MetricType::OPERATOR_CPU_TIME:
 	case MetricType::OPERATOR_NAME:
 	case MetricType::OPERATOR_ROWS_SCANNED:
 	case MetricType::OPERATOR_ROW_GROUPS_SCANNED:
