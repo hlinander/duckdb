@@ -95,13 +95,18 @@ QueryProfiler &QueryProfiler::Get(ClientContext &context) {
 }
 
 void QueryProfiler::Start(const string &query) {
-	Reset();
+	ResetInternal();
 	running = true;
 	query_metrics.query_name = query;
 	query_metrics.latency_timer = make_uniq<ActiveTimer>(StartTimer(MetricType::LATENCY));
 }
 
 void QueryProfiler::Reset() {
+	lock_guard<std::mutex> guard(lock);
+	ResetInternal();
+}
+
+void QueryProfiler::ResetInternal() {
 	tree_map.clear();
 	root = nullptr;
 	phase_timings.clear();

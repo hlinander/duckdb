@@ -1,11 +1,55 @@
 #include "catch.hpp"
 #include "test_helpers.hpp"
+#include "duckdb/main/query_profiler.hpp"
+#include "duckdb/transaction/transaction_context.hpp"
 
+#include <future>
 #include <iostream>
 #include <thread>
 
 using namespace duckdb;
 using namespace std;
+
+TEST_CASE("Profiler reset waits for a concurrent tree reader", "[api]") {
+	DuckDB db(nullptr);
+	Connection con(db);
+	con.EnableProfiling();
+	con.context->config.emit_profiler_output = false;
+	bool rollback = false;
+	SECTION("Direct reset") {
+	}
+	SECTION("Transaction rollback") {
+		rollback = true;
+		REQUIRE_NO_FAIL(con.Query("BEGIN TRANSACTION"));
+	}
+	REQUIRE_NO_FAIL(con.Query("SELECT sum(i) FROM range(1000) t(i)"));
+	auto &profiler = QueryProfiler::Get(*con.context);
+	REQUIRE(profiler.GetRoot());
+
+	promise<void> started;
+	auto ready = started.get_future();
+	future<void> reset;
+	bool reset_waits = false;
+	profiler.GetRootUnderLock([&](optional_ptr<ProfilingNode> root) {
+		REQUIRE(root);
+		reset = async(launch::async, [&]() {
+			started.set_value();
+			if (rollback) {
+				con.context->transaction.Rollback(nullptr);
+			} else {
+				profiler.Reset();
+			}
+		});
+		ready.wait();
+		reset_waits = reset.wait_for(chrono::milliseconds(100)) == future_status::timeout;
+	});
+	// Join after releasing the reader's lock, including when the assertion fails.
+	reset.get();
+	REQUIRE(reset_waits);
+	REQUIRE_FALSE(profiler.GetRoot());
+	// Query startup also resets the profiler while holding its lock.
+	REQUIRE_NO_FAIL(con.Query("SELECT 42"));
+}
 
 TEST_CASE("Test query profiler", "[api]") {
 	duckdb::unique_ptr<QueryResult> result;
