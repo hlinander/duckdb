@@ -219,6 +219,8 @@ public:
 	}
 
 private:
+	//! Reset with the profiler lock already held.
+	void ResetInternal();
 	unique_ptr<ProfilingNode> CreateTree(const PhysicalOperator &root, const profiler_settings_t &settings,
 	                                     const idx_t depth = 0);
 	void Render(const ProfilingNode &node, std::ostream &str) const;
