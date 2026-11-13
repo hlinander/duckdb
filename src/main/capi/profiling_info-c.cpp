@@ -140,7 +140,9 @@ duckdb_state duckdb_begin_measured(duckdb_connection connection, duckdb_resource
 	Connection *conn = reinterpret_cast<Connection *>(connection);
 	try {
 		// an attempt that starts no query would otherwise read the tree of the previous statement
-		QueryProfiler::Get(*conn->context).Reset();
+		auto &profiler = QueryProfiler::Get(*conn->context);
+		profiler.measured_bracket = true;
+		profiler.Reset();
 		DatabaseInstance::GetDatabase(*conn->context).GetBufferPool().SetMemoryPeak();
 		ReadResourceTotals(*conn, *out_open);
 	} catch (...) {
@@ -172,6 +174,7 @@ duckdb_state duckdb_end_measured(duckdb_connection connection, duckdb_resource_t
 		state = DuckDBError;
 	}
 	try {
+		QueryProfiler::Get(*conn->context).measured_bracket = false;
 		ReadResourceTotals(*conn, *out_close);
 	} catch (...) {
 		state = DuckDBError;

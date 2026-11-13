@@ -94,6 +94,10 @@ void TransactionContext::Rollback(optional_ptr<ErrorData> error) {
 	}
 	auto transaction = std::move(current_transaction);
 	ClearTransaction();
+	if (!context.client_data->profiler->measured_bracket.load()) {
+		// inside a measured bracket the tree of the statement is kept across its rollback
+		context.client_data->profiler->Reset();
+	}
 
 	ErrorData rollback_error;
 	try {
