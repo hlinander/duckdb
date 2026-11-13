@@ -43,6 +43,7 @@ set(TEST_API_OBJECTS
 
 if(NOT WIN32)
   set(TEST_API_OBJECTS ${TEST_API_OBJECTS} test_read_only.cpp
+                       test_resource_scope.cpp
                        test_resource_totals.cpp)
 endif()
 
