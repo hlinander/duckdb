@@ -601,10 +601,17 @@ unique_ptr<HTTPResponse> HTTPClient::Request(BaseRequest &request) {
 			bytes_read = response->body.size();
 		}
 		break;
-	case RequestType::POST_REQUEST:
-		// the response body of a POST is not counted
-		response = Post(request.Cast<PostRequestInfo>());
+	case RequestType::POST_REQUEST: {
+		// a client can append to buffer_out, and a retry sends the same request: count the growth across the call
+		auto &info = request.Cast<PostRequestInfo>();
+		auto length_before = info.buffer_out.size();
+		response = Post(info);
+		auto length_after = info.buffer_out.size();
+		if (length_after > length_before) {
+			bytes_read = length_after - length_before;
+		}
 		break;
+	}
 	default:
 		throw InternalException("Unsupported request type");
 	}
