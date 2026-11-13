@@ -193,7 +193,8 @@ void CheckAttempt(const Attempt &attempt, const string &name) {
 	REQUIRE(attempt.close.memory_peak_bytes >= attempt.open.memory_bytes);
 	auto wall_ms = std::chrono::duration<double, std::milli>(attempt.after.wall - attempt.before.wall).count();
 	auto byte_ms = attempt.close.memory_byte_ms - attempt.open.memory_byte_ms;
-	REQUIRE(double(byte_ms) <= double(attempt.close.memory_peak_bytes) * wall_ms);
+	// one byte-millisecond for the truncation of each of the two reads
+	REQUIRE(double(byte_ms) <= double(attempt.close.memory_peak_bytes) * wall_ms + 2);
 }
 
 uint64_t FileSize(const string &path) {
@@ -285,7 +286,7 @@ TEST_CASE("Test that the resource totals cover what the process spent", "[api]")
 		return attempt;
 	};
 
-	// pipeline tasks; a grouped aggregation without DISTINCT schedules no HashAggregateFinalizeTask
+	// a finalize that runs inline on the finish task of the pipeline
 	run("grouped aggregation", "SELECT count(*), sum(s) FROM (SELECT i % 3000017 AS g, sum(i) AS s FROM "
 	                           "range(40000000) t(i) GROUP BY g)");
 
