@@ -97,6 +97,77 @@
                 },
                 "return_value": "The child node at the specified index."
             }
+        },
+        {
+            "name": "duckdb_resource_totals_read",
+            "return_type": "duckdb_state",
+            "params": [
+                {
+                    "type": "duckdb_connection",
+                    "name": "connection"
+                },
+                {
+                    "type": "duckdb_resource_totals *",
+                    "name": "out"
+                }
+            ],
+            "comment": {
+                "description": "Reads the cumulative resource totals of the connection and of its database, and the memory marks of that database's\nbuffer pool. Takes no connection lock, so a caller on another thread never waits for a running statement.\nEvery field of `out` is written on every return path.\n\n",
+                "param_comments": {
+                    "connection": "A connection object.",
+                    "out": "The resource totals."
+                },
+                "return_value": "`DuckDBSuccess` on success or `DuckDBError` on failure."
+            }
+        },
+        {
+            "name": "duckdb_begin_measured",
+            "return_type": "duckdb_state",
+            "params": [
+                {
+                    "type": "duckdb_connection",
+                    "name": "connection"
+                },
+                {
+                    "type": "duckdb_resource_totals *",
+                    "name": "out_open"
+                }
+            ],
+            "comment": {
+                "description": "Opens a measured interval on the connection: resets the connection's profiling tree, sets the peak memory mark of\nits database to the current floor, and then reads the resource totals as `duckdb_resource_totals_read` does.\nThe figures of the interval are the differences between the read of `duckdb_end_measured` and this read.\n\n",
+                "param_comments": {
+                    "connection": "A connection object.",
+                    "out_open": "The resource totals at the opening of the interval."
+                },
+                "return_value": "`DuckDBSuccess` on success or `DuckDBError` on failure."
+            }
+        },
+        {
+            "name": "duckdb_end_measured",
+            "return_type": "duckdb_state",
+            "params": [
+                {
+                    "type": "duckdb_connection",
+                    "name": "connection"
+                },
+                {
+                    "type": "duckdb_resource_totals *",
+                    "name": "out_close"
+                },
+                {
+                    "type": "bool *",
+                    "name": "out_abandoned"
+                }
+            ],
+            "comment": {
+                "description": "Closes a measured interval on the connection: ends an execution that is still open, reporting failure to its\ntransaction without invalidating it, and then reads the resource totals as `duckdb_resource_totals_read` does.\nWaits for the outstanding tasks of the execution it ends.\n\n",
+                "param_comments": {
+                    "connection": "A connection object.",
+                    "out_close": "The resource totals at the closing of the interval.",
+                    "out_abandoned": "Set to whether an execution was still open and has been ended. Can be NULL."
+                },
+                "return_value": "`DuckDBSuccess` on success or `DuckDBError` on failure."
+            }
         }
     ]
 }

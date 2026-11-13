@@ -1,10 +1,13 @@
 #include "duckdb/main/capi/capi_internal.hpp"
+#include "duckdb/main/query_profiler.hpp"
+#include "duckdb/storage/buffer/buffer_pool.hpp"
 
+using duckdb::ClientContext;
 using duckdb::Connection;
+using duckdb::DatabaseInstance;
 using duckdb::DuckDB;
 using duckdb::EnumUtil;
 using duckdb::MetricType;
-using duckdb::ClientContext;
 using duckdb::optional_ptr;
 using duckdb::ProfilingNode;
 using duckdb::QueryProfiler;
@@ -90,39 +93,88 @@ duckdb_profiling_info duckdb_profiling_info_get_child(duckdb_profiling_info info
 	return reinterpret_cast<duckdb_profiling_info>(profiling_info_ptr);
 }
 
-static double sum_operator_cpu_time(duckdb::ProfilingNode &node) {
-	double total = 0.0;
-	auto &info = node.GetProfilingInfo();
-	if (info.Enabled(info.settings, MetricType::OPERATOR_CPU_TIME)) {
-		auto it = info.metrics.find(MetricType::OPERATOR_CPU_TIME);
-		if (it != info.metrics.end()) {
-			total += it->second.GetValue<double>();
-		}
-	}
-	for (idx_t i = 0; i < node.GetChildCount(); i++) {
-		auto child = node.GetChild(i);
-		if (child) {
-			total += sum_operator_cpu_time(*child);
-		}
-	}
-	return total;
+//! Writes every field of the totals; zeroes them first so a failure leaves no field unwritten
+static void ReadResourceTotals(Connection &conn, duckdb_resource_totals &out) {
+	auto &context = *conn.context;
+	auto &profiler = QueryProfiler::Get(context);
+	auto &db = DatabaseInstance::GetDatabase(context);
+
+	out.connection.cpu_ns = profiler.cpu_ns.load(std::memory_order_relaxed);
+	out.connection.bytes_read = profiler.bytes_read.load(std::memory_order_relaxed);
+	out.connection.bytes_written = profiler.bytes_written.load(std::memory_order_relaxed);
+	out.database.cpu_ns = db.cpu_ns.load(std::memory_order_relaxed);
+	out.database.bytes_read = db.bytes_read.load(std::memory_order_relaxed);
+	out.database.bytes_written = db.bytes_written.load(std::memory_order_relaxed);
+
+	auto marks = db.GetBufferPool().ReadMemoryMarks();
+	out.memory_bytes = marks.floor_bytes;
+	out.memory_peak_bytes = marks.peak_bytes;
+	out.memory_byte_ms = marks.byte_ms;
 }
 
-double duckdb_get_accumulated_cpu_time(duckdb_connection connection) {
+duckdb_state duckdb_resource_totals_read(duckdb_connection connection, duckdb_resource_totals *out) {
+	if (!out) {
+		return DuckDBError;
+	}
+	*out = duckdb_resource_totals();
 	if (!connection) {
-		return 0.0;
+		return DuckDBError;
 	}
 	Connection *conn = reinterpret_cast<Connection *>(connection);
-	double result = 0.0;
 	try {
-		auto &profiler = QueryProfiler::Get(*conn->context);
-		profiler.GetRootUnderLock([&](optional_ptr<ProfilingNode> root) {
-			if (root) {
-				result = sum_operator_cpu_time(*root);
-			}
-		});
-	} catch (std::exception &) {
-		return 0.0;
+		ReadResourceTotals(*conn, *out);
+	} catch (...) {
+		return DuckDBError;
 	}
-	return result;
+	return DuckDBSuccess;
+}
+
+duckdb_state duckdb_begin_measured(duckdb_connection connection, duckdb_resource_totals *out_open) {
+	if (!out_open) {
+		return DuckDBError;
+	}
+	*out_open = duckdb_resource_totals();
+	if (!connection) {
+		return DuckDBError;
+	}
+	Connection *conn = reinterpret_cast<Connection *>(connection);
+	try {
+		// an attempt that starts no query would otherwise read the tree of the previous statement
+		QueryProfiler::Get(*conn->context).Reset();
+		DatabaseInstance::GetDatabase(*conn->context).GetBufferPool().SetMemoryPeak();
+		ReadResourceTotals(*conn, *out_open);
+	} catch (...) {
+		return DuckDBError;
+	}
+	return DuckDBSuccess;
+}
+
+duckdb_state duckdb_end_measured(duckdb_connection connection, duckdb_resource_totals *out_close, bool *out_abandoned) {
+	if (out_abandoned) {
+		*out_abandoned = false;
+	}
+	if (!out_close) {
+		return DuckDBError;
+	}
+	*out_close = duckdb_resource_totals();
+	if (!connection) {
+		return DuckDBError;
+	}
+	Connection *conn = reinterpret_cast<Connection *>(connection);
+	auto state = DuckDBSuccess;
+	try {
+		// end an execution that nobody finished, so its CPU stays with the interval that incurred it
+		auto abandoned = conn->context->EndAbandonedQuery();
+		if (out_abandoned) {
+			*out_abandoned = abandoned;
+		}
+	} catch (...) {
+		state = DuckDBError;
+	}
+	try {
+		ReadResourceTotals(*conn, *out_close);
+	} catch (...) {
+		state = DuckDBError;
+	}
+	return state;
 }

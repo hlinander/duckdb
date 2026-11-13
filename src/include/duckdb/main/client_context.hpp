@@ -96,6 +96,9 @@ public:
 		return transaction.ActiveTransaction();
 	}
 
+	//! Ends an execution that is still open: cancels its tasks and reports failure to its transaction, without
+	//! invalidating the transaction. Returns whether an execution was open.
+	DUCKDB_API bool EndAbandonedQuery();
 	//! Interrupt execution of a query
 	DUCKDB_API void Interrupt();
 	DUCKDB_API bool IsInterrupted() const;

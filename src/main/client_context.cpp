@@ -334,6 +334,13 @@ void ClientContext::CleanupInternal(ClientContextLock &lock, BaseQueryResult *re
 	D_ASSERT(!active_query);
 }
 
+bool ClientContext::EndAbandonedQuery() {
+	auto lock = LockContext();
+	bool abandoned = active_query != nullptr;
+	CleanupInternal(*lock, nullptr, false);
+	return abandoned;
+}
+
 Executor &ClientContext::GetExecutor() {
 	D_ASSERT(active_query);
 	D_ASSERT(active_query->executor);

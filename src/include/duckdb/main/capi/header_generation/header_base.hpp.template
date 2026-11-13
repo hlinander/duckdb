@@ -421,6 +421,26 @@ typedef struct {
 	uint64_t total_rows_to_process;
 } duckdb_query_progress_type;
 
+//! Cumulative CPU and IO totals of a connection or of a database. Nothing resets them: a reader takes the difference
+//! between two reads.
+typedef struct {
+	uint64_t cpu_ns;
+	uint64_t bytes_read;
+	uint64_t bytes_written;
+} duckdb_usage_totals;
+
+//! The totals of a connection and of its database, and the memory marks of the database's buffer pool.
+//! `memory_bytes` is the floor of the pool's level, `memory_peak_bytes` is the largest floor since the last
+//! `duckdb_begin_measured`, and `memory_byte_ms` is the integral of the floor over time in byte-milliseconds, which
+//! a reader subtracts with wrapping arithmetic.
+typedef struct {
+	duckdb_usage_totals connection;
+	duckdb_usage_totals database;
+	uint64_t memory_bytes;
+	uint64_t memory_peak_bytes;
+	uint64_t memory_byte_ms;
+} duckdb_resource_totals;
+
 //! The internal representation of a VARCHAR (string_t). If the VARCHAR does not
 //! exceed 12 characters, then we inline it. Otherwise, we inline a four-byte prefix for faster
 //! string comparisons and store a pointer to the remaining characters. This is a non-

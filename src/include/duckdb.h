@@ -421,6 +421,26 @@ typedef struct {
 	uint64_t total_rows_to_process;
 } duckdb_query_progress_type;
 
+//! Cumulative CPU and IO totals of a connection or of a database. Nothing resets them: a reader takes the difference
+//! between two reads.
+typedef struct {
+	uint64_t cpu_ns;
+	uint64_t bytes_read;
+	uint64_t bytes_written;
+} duckdb_usage_totals;
+
+//! The totals of a connection and of its database, and the memory marks of the database's buffer pool.
+//! `memory_bytes` is the floor of the pool's level, `memory_peak_bytes` is the largest floor since the last
+//! `duckdb_begin_measured`, and `memory_byte_ms` is the integral of the floor over time in byte-milliseconds, which
+//! a reader subtracts with wrapping arithmetic.
+typedef struct {
+	duckdb_usage_totals connection;
+	duckdb_usage_totals database;
+	uint64_t memory_bytes;
+	uint64_t memory_peak_bytes;
+	uint64_t memory_byte_ms;
+} duckdb_resource_totals;
+
 //! The internal representation of a VARCHAR (string_t). If the VARCHAR does not
 //! exceed 12 characters, then we inline it. Otherwise, we inline a four-byte prefix for faster
 //! string comparisons and store a pointer to the remaining characters. This is a non-
@@ -4609,18 +4629,39 @@ Returns the child node at the specified index.
 DUCKDB_C_API duckdb_profiling_info duckdb_profiling_info_get_child(duckdb_profiling_info info, idx_t index);
 
 /*!
-Returns the accumulated CPU time (in seconds) across all operators in the current query profile.
-Acquires the profiler lock for thread safety, making it suitable for mid-flight sampling.
-Returns 0.0 if profiling is not enabled or no profiling data is available.
-
-Requires that profiling is enabled on the connection:
-  SET enable_profiling = 'json';
-  SET custom_profiling_settings = '{"OPERATOR_CPU_TIME": "true", "CPU_TIME_ACTUAL": "true"}';
+Reads the cumulative resource totals of the connection and of its database, and the memory marks of that database's
+buffer pool. Takes no connection lock, so a caller on another thread never waits for a running statement.
+Every field of `out` is written on every return path.
 
 * @param connection A connection object.
-* @return The accumulated CPU time in seconds.
+* @param out The resource totals.
+* @return `DuckDBSuccess` on success or `DuckDBError` on failure.
 */
-DUCKDB_C_API double duckdb_get_accumulated_cpu_time(duckdb_connection connection);
+DUCKDB_C_API duckdb_state duckdb_resource_totals_read(duckdb_connection connection, duckdb_resource_totals *out);
+
+/*!
+Opens a measured interval on the connection: resets the connection's profiling tree, sets the peak memory mark of
+its database to the current floor, and then reads the resource totals as `duckdb_resource_totals_read` does.
+The figures of the interval are the differences between the read of `duckdb_end_measured` and this read.
+
+* @param connection A connection object.
+* @param out_open The resource totals at the opening of the interval.
+* @return `DuckDBSuccess` on success or `DuckDBError` on failure.
+*/
+DUCKDB_C_API duckdb_state duckdb_begin_measured(duckdb_connection connection, duckdb_resource_totals *out_open);
+
+/*!
+Closes a measured interval on the connection: ends an execution that is still open, reporting failure to its
+transaction without invalidating it, and then reads the resource totals as `duckdb_resource_totals_read` does.
+Waits for the outstanding tasks of the execution it ends.
+
+* @param connection A connection object.
+* @param out_close The resource totals at the closing of the interval.
+* @param out_abandoned Set to whether an execution was still open and has been ended. Can be NULL.
+* @return `DuckDBSuccess` on success or `DuckDBError` on failure.
+*/
+DUCKDB_C_API duckdb_state duckdb_end_measured(duckdb_connection connection, duckdb_resource_totals *out_close,
+                                              bool *out_abandoned);
 
 //----------------------------------------------------------------------------------------------------------------------
 // Appender

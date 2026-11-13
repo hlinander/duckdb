@@ -1,7 +1,11 @@
 {
     "exclusion_list": [
         {
+            "reason": "The measured-interval functions take a connection of the host application, which an extension does not bracket.",
             "entries": [
+                "duckdb_resource_totals_read",
+                "duckdb_begin_measured",
+                "duckdb_end_measured"
             ]
         }
     ]
