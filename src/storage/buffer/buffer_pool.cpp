@@ -314,6 +314,14 @@ idx_t BufferPool::GetUsedMemory(bool flush) const {
 	return memory_usage.GetUsedMemory(flush ? MemoryUsageCaches::FLUSH : MemoryUsageCaches::NO_FLUSH);
 }
 
+BufferPool::MemoryMarks BufferPool::ReadMemoryMarks() const {
+	return memory_usage.ReadMarks();
+}
+
+void BufferPool::SetMemoryPeak() {
+	memory_usage.SetPeak();
+}
+
 idx_t BufferPool::GetMaxMemory() const {
 	return maximum_memory;
 }
@@ -327,6 +335,8 @@ TemporaryMemoryManager &BufferPool::GetTemporaryMemoryManager() {
 }
 
 BufferPool::EvictionResult BufferPool::EvictObjectCacheEntries(MemoryTag tag, idx_t extra_memory, idx_t memory_limit) {
+	// the reservation is in the total before it is granted: keep it out of the memory marks until this function returns
+	MemoryProbe probe(memory_usage, extra_memory);
 	TempBufferPoolReservation r(tag, *this, extra_memory);
 
 	if (memory_usage.GetUsedMemory(MemoryUsageCaches::NO_FLUSH) <= memory_limit) {
@@ -374,6 +384,8 @@ BufferPool::EvictionResult BufferPool::EvictBlocks(MemoryTag tag, idx_t extra_me
 
 BufferPool::EvictionResult BufferPool::EvictBlocksInternal(EvictionQueue &queue, MemoryTag tag, idx_t extra_memory,
                                                            idx_t memory_limit, unique_ptr<FileBuffer> *buffer) {
+	// the reservation is in the total before it is granted: keep it out of the memory marks until this function returns
+	MemoryProbe probe(memory_usage, extra_memory);
 	TempBufferPoolReservation r(tag, *this, extra_memory);
 	bool found = false;
 
@@ -524,7 +536,13 @@ idx_t BufferPool::GetAllocatorBulkDeallocationFlushThreshold() {
 	return allocator_bulk_deallocation_flush_threshold;
 }
 
-BufferPool::MemoryUsage::MemoryUsage() {
+static uint64_t MonotonicNs() {
+	return static_cast<uint64_t>(
+	    std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch())
+	        .count());
+}
+
+BufferPool::MemoryUsage::MemoryUsage() : peak_bytes(0), byte_ns(0), probe_bytes(0), last_change_ns(MonotonicNs()) {
 	for (auto &v : memory_usage) {
 		v = 0;
 	}
@@ -554,13 +572,77 @@ void BufferPool::MemoryUsage::UpdateUsedMemory(MemoryTag tag, int64_t size) {
 		if ((idx_t)AbsValue(new_total_size) >= MEMORY_USAGE_CACHE_THRESHOLD) {
 			// cached total memory usage exceeds threshold
 			auto total_size = cache[TOTAL_MEMORY_USAGE_INDEX].exchange(0, std::memory_order_relaxed);
-			memory_usage[TOTAL_MEMORY_USAGE_INDEX].fetch_add(total_size, std::memory_order_relaxed);
+			UpdateTotal(total_size);
 		}
 	} else {
 		// update global counter
 		memory_usage[tag_idx].fetch_add(size, std::memory_order_relaxed);
-		memory_usage[TOTAL_MEMORY_USAGE_INDEX].fetch_add(size, std::memory_order_relaxed);
+		UpdateTotal(size);
 	}
+}
+
+idx_t BufferPool::MemoryUsage::Floor() const {
+	// the total differs from the true level by less than the capacity of the caches, in either direction
+	static constexpr int64_t CACHE_TOLERANCE =
+	    static_cast<int64_t>(MEMORY_USAGE_CACHE_COUNT * MEMORY_USAGE_CACHE_THRESHOLD);
+	auto total = memory_usage[TOTAL_MEMORY_USAGE_INDEX].load(std::memory_order_relaxed);
+	if (total <= CACHE_TOLERANCE) {
+		return 0;
+	}
+	auto floor = static_cast<idx_t>(total - CACHE_TOLERANCE);
+	return floor > probe_bytes ? floor - probe_bytes : 0;
+}
+
+void BufferPool::MemoryUsage::AdvanceIntegral() {
+	auto now = MonotonicNs();
+	if (now > last_change_ns) {
+		byte_ns += uhugeint_t(Floor()) * uhugeint_t(now - last_change_ns);
+		last_change_ns = now;
+	}
+}
+
+void BufferPool::MemoryUsage::RaisePeak() {
+	auto floor = Floor();
+	if (floor > peak_bytes) {
+		peak_bytes = floor;
+	}
+}
+
+int64_t BufferPool::MemoryUsage::UpdateTotal(int64_t size) {
+	lock_guard<mutex> guard(marks_lock);
+	AdvanceIntegral();
+	auto total = memory_usage[TOTAL_MEMORY_USAGE_INDEX].fetch_add(size, std::memory_order_relaxed) + size;
+	RaisePeak();
+	return total;
+}
+
+void BufferPool::MemoryUsage::AddProbe(idx_t size) {
+	lock_guard<mutex> guard(marks_lock);
+	AdvanceIntegral();
+	probe_bytes += size;
+	RaisePeak();
+}
+
+void BufferPool::MemoryUsage::RemoveProbe(idx_t size) {
+	lock_guard<mutex> guard(marks_lock);
+	AdvanceIntegral();
+	probe_bytes -= size;
+	RaisePeak();
+}
+
+BufferPool::MemoryMarks BufferPool::MemoryUsage::ReadMarks() {
+	lock_guard<mutex> guard(marks_lock);
+	AdvanceIntegral();
+	MemoryMarks result;
+	result.floor_bytes = Floor();
+	result.peak_bytes = peak_bytes;
+	result.byte_ms = (byte_ns / uhugeint_t(1000000)).lower;
+	return result;
+}
+
+void BufferPool::MemoryUsage::SetPeak() {
+	lock_guard<mutex> guard(marks_lock);
+	peak_bytes = Floor();
 }
 
 } // namespace duckdb

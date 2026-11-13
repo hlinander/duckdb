@@ -15,6 +15,7 @@
 #include "duckdb/common/mutex.hpp"
 #include "duckdb/common/optional_ptr.hpp"
 #include "duckdb/common/typedefs.hpp"
+#include "duckdb/common/uhugeint.hpp"
 #include "duckdb/storage/buffer/block_handle.hpp"
 
 namespace duckdb {
@@ -60,6 +61,21 @@ public:
 	void UpdateUsedMemory(MemoryTag tag, int64_t size);
 
 	idx_t GetUsedMemory(bool flush = true) const;
+
+	//! The memory marks of the pool
+	struct MemoryMarks {
+		//! The floor of the pool's level: the total minus the reservations under test minus the cache tolerance
+		idx_t floor_bytes;
+		//! The largest floor the pool has reached since the peak was last set
+		idx_t peak_bytes;
+		//! The integral of the floor over time, in byte-milliseconds, truncated to 64 bits. Nothing resets it:
+		//! a reader subtracts two reads with wrapping arithmetic.
+		uint64_t byte_ms;
+	};
+	//! Reads the memory marks. Completes in bounded time, whatever the engine is doing.
+	MemoryMarks ReadMemoryMarks() const;
+	//! Sets the peak mark to the floor
+	void SetMemoryPeak();
 
 	idx_t GetMaxMemory() const;
 
@@ -136,6 +152,17 @@ protected:
 		//! cache memory usage to improve performance
 		array<MemoryUsageCounters, MEMORY_USAGE_CACHE_COUNT> memory_usage_caches;
 
+		//! The lock for the memory marks, and for every write of the total. It is never held across engine work.
+		mutex marks_lock;
+		//! The largest floor the pool has reached since the peak was last set
+		idx_t peak_bytes;
+		//! The integral of the floor over time, in byte-nanoseconds. Nothing resets it.
+		uhugeint_t byte_ns;
+		//! The sum of the reservations the pool is testing against its limit and has not granted
+		idx_t probe_bytes;
+		//! The monotonic clock reading at which byte_ns was last advanced
+		uint64_t last_change_ns;
+
 		MemoryUsage();
 
 		idx_t GetUsedMemory(MemoryUsageCaches cache) {
@@ -155,11 +182,44 @@ protected:
 			for (auto &cache : memory_usage_caches) {
 				cached += cache[index].exchange(0, std::memory_order_relaxed);
 			}
-			auto used_memory = memory_usage[index].fetch_add(cached, std::memory_order_relaxed) + cached;
+			int64_t used_memory;
+			if (index == TOTAL_MEMORY_USAGE_INDEX) {
+				used_memory = UpdateTotal(cached);
+			} else {
+				used_memory = memory_usage[index].fetch_add(cached, std::memory_order_relaxed) + cached;
+			}
 			return used_memory > 0 ? static_cast<idx_t>(used_memory) : 0;
 		}
 
 		void UpdateUsedMemory(MemoryTag tag, int64_t size);
+
+		//! Applies a change to the total, advancing the integral before it and raising the peak after it.
+		//! Every write of the total goes through this function. Returns the new total.
+		int64_t UpdateTotal(int64_t size);
+		//! Adds/removes a reservation the pool is testing against its limit
+		void AddProbe(idx_t size);
+		void RemoveProbe(idx_t size);
+		MemoryMarks ReadMarks();
+		void SetPeak();
+
+	private:
+		//! The following functions require marks_lock
+		idx_t Floor() const;
+		void AdvanceIntegral();
+		void RaisePeak();
+	};
+
+	//! Marks a reservation as under test against the memory limit for its lifetime
+	struct MemoryProbe {
+		MemoryProbe(MemoryUsage &usage_p, idx_t size_p) : usage(usage_p), size(size_p) {
+			usage.AddProbe(size);
+		}
+		~MemoryProbe() {
+			usage.RemoveProbe(size);
+		}
+
+		MemoryUsage &usage;
+		idx_t size;
 	};
 
 	//! The lock for changing the memory limit
