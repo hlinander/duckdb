@@ -175,33 +175,33 @@ Attempt Measure(Connection &con, const string &name, const std::function<void()>
 	return attempt;
 }
 
-//! What the assertions carry from one bracket to the next
+//! What the assertions of every bracket read
 struct RunState {
 	//! The process clock, read once before the database opens
 	uint64_t process_cpu_before_database_ns = 0;
-	//! The sum of the database CPU of every bracket so far
-	uint64_t database_cpu_sum_ns = 0;
 	//! The value of task_boundary_cpu_clock the statement runs under
 	bool task_boundary_cpu_clock = false;
 };
 
 //! The assertions that hold for every statement
 void CheckAttempt(const Attempt &attempt, const string &name, RunState &state) {
-	state.database_cpu_sum_ns += attempt.DatabaseCpu();
+	// the database's total starts at zero when the database opens
+	auto database_cpu_total = attempt.close.database.cpu_ns;
 	auto process_cpu_since_database = attempt.after.cpu_ns - state.process_cpu_before_database_ns;
 
 	if (std::getenv("DUCKDB_RESOURCE_TOTALS_PRINT")) {
 		fprintf(stderr,
-		        "%-28s database sum %8.3fs process since open %8.3fs | largest node %7.3fs | connection after "
-		        "close %llu, 100 ms later %llu\n",
-		        "", double(state.database_cpu_sum_ns) / 1e9, double(process_cpu_since_database) / 1e9,
+		        "%-28s database total %8.3fs process since open %8.3fs slack %.6fs | largest node %7.3fs | "
+		        "connection after close %llu, 100 ms later %llu\n",
+		        "", double(database_cpu_total) / 1e9, double(process_cpu_since_database) / 1e9,
+		        (double(process_cpu_since_database) - double(database_cpu_total)) / 1e9,
 		        attempt.tree.max_node_cpu_seconds, (unsigned long long)attempt.settled_first.connection.cpu_ns,
 		        (unsigned long long)attempt.settled_second.connection.cpu_ns);
 	}
 
 	INFO(name);
 	INFO("task_boundary_cpu_clock: " << state.task_boundary_cpu_clock);
-	INFO("database CPU ns, summed over the brackets so far: " << state.database_cpu_sum_ns);
+	INFO("database CPU ns at the closing read: " << database_cpu_total);
 	INFO("process CPU ns since the read that precedes the database: " << process_cpu_since_database);
 	INFO("largest OPERATOR_CPU_TIME of a node, seconds: " << attempt.tree.max_node_cpu_seconds << ", operator nodes "
 	                                                      << attempt.tree.operator_nodes);
@@ -212,10 +212,10 @@ void CheckAttempt(const Attempt &attempt, const string &name, RunState &state) {
 	INFO("connection CPU ns: " << attempt.ConnectionCpu());
 	INFO("tree CPU seconds: " << attempt.tree.cpu_seconds << " over " << attempt.tree.nodes << " nodes");
 
-	// no CPU-second is reported that the process did not spend: a connection's figure takes no carry, and the sum of
-	// the database's figure over the brackets counts each carried CPU-second once
+	// no CPU-second is reported that the process did not spend: a connection's figure takes no carry, and the
+	// database's total since it opened counts each carried CPU-second once
 	REQUIRE(attempt.ConnectionCpu() <= attempt.ProcessCpu());
-	REQUIRE(state.database_cpu_sum_ns <= process_cpu_since_database);
+	REQUIRE(database_cpu_total <= process_cpu_since_database);
 	// the scopes cover the CPU the process spent
 	REQUIRE(attempt.DatabaseCpu() * 10 >= attempt.ProcessCpu() * 9);
 
@@ -323,9 +323,14 @@ TEST_CASE("Test that the resource totals cover what the process spent", "[api]")
 	// the data the statements read; none of this is measured
 	REQUIRE_NO_FAIL(con.Query("SET wal_autocheckpoint = '1TB'"));
 	REQUIRE_NO_FAIL(con.Query("CREATE TABLE src AS SELECT i, i * 3 AS j, hash(i) AS h FROM range(60000000) t(i)"));
+	// the table whose deletes the checkpointing commit writes. It is wide and not long: the commit's work grows with
+	// the bytes it rewrites, and the memory the deletes hold afterwards grows with the rows
+	REQUIRE_NO_FAIL(con.Query("CREATE TABLE checkpointed AS SELECT i, i * 3 AS j, hash(i) AS h, hash(i + 1) AS h1, "
+	                          "hash(i + 2) AS h2, hash(i + 3) AS h3, hash(i + 4) AS h4, hash(i + 5) AS h5 FROM "
+	                          "range(100000000) t(i)"));
 	REQUIRE_NO_FAIL(con.Query("CHECKPOINT"));
 	const string csv_query =
-	    "SELECT i % 1000 AS a, 'some repeated text value' AS b, i % 7 AS c FROM range(8000000) t(i)";
+	    "SELECT i % 1000 AS a, 'some repeated text value' AS b, i % 7 AS c FROM range(24000000) t(i)";
 	REQUIRE_NO_FAIL(con.Query("COPY (" + csv_query + ") TO '" + gzip_path + "' (FORMAT csv, COMPRESSION gzip)"));
 	REQUIRE_NO_FAIL(con.Query("COPY (" + csv_query + ") TO '" + csv_path + "' (FORMAT csv)"));
 	REQUIRE_NO_FAIL(con.Query("COPY (SELECT i, j, h, i % 48 AS part FROM src WHERE i < 30000000) TO '" + union_path +
@@ -388,9 +393,9 @@ TEST_CASE("Test that the resource totals cover what the process spent", "[api]")
 		}
 
 		// probe_bytes: the pool refuses the reservation of the join's pointer table, which holds
-		// NextPowerOfTwo(2 * 33554433) pointers
+		// NextPowerOfTwo(2 * 134217729) pointers
 		{
-			const uint64_t refused_bytes = 1ULL << 30;
+			const uint64_t refused_bytes = 1ULL << 32;
 			// RESET memory_limit leaves the pool's limit in place and RESET temp_directory leaves it empty: both are
 			// set back
 			auto settings = con.Query("SELECT current_setting('memory_limit'), current_setting('temp_directory')");
@@ -398,18 +403,18 @@ TEST_CASE("Test that the resource totals cover what the process spent", "[api]")
 			auto memory_limit = settings->GetValue(0, 0).ToString();
 			auto temp_directory = settings->GetValue(1, 0).ToString();
 			// the limit is below the refused amount, so no level the pool grants reaches that amount
-			REQUIRE_NO_FAIL(con.Query("SET memory_limit = '1020MiB'"));
+			REQUIRE_NO_FAIL(con.Query("SET memory_limit = '4000MiB'"));
 			REQUIRE_NO_FAIL(con.Query("SET temp_directory = ''"));
 			REQUIRE_NO_FAIL(con.Query("SET disabled_optimizers = 'join_order,build_side_probe_side'"));
 			string error;
 			auto attempt = Measure(con, "refused reservation", [&]() {
 				auto result = con.Query("SELECT count(*) FROM range(1000) a(i) JOIN (SELECT j::INTEGER AS j FROM "
-				                        "range(33554433) b(j)) b ON a.i::INTEGER = b.j");
+				                        "range(134217729) b(j)) b ON a.i::INTEGER = b.j");
 				REQUIRE(result->HasError());
 				error = result->GetError();
 			});
 			INFO(error);
-			REQUIRE(error.find("failed to allocate data of size 1.0 GiB") != string::npos);
+			REQUIRE(error.find("failed to allocate data of size 4.0 GiB") != string::npos);
 			CheckAttempt(attempt, "refused reservation", state);
 			REQUIRE(attempt.close.memory_peak_bytes < refused_bytes);
 			REQUIRE_NO_FAIL(con.Query("RESET disabled_optimizers"));
@@ -429,7 +434,7 @@ TEST_CASE("Test that the resource totals cover what the process spent", "[api]")
 		{
 			REQUIRE_NO_FAIL(con.Query("BEGIN"));
 			// each pass deletes rows the other leaves
-			REQUIRE_NO_FAIL(con.Query("DELETE FROM src WHERE i % 3 = " + to_string(pass)));
+			REQUIRE_NO_FAIL(con.Query("DELETE FROM checkpointed WHERE i % 3 = " + to_string(pass)));
 			REQUIRE_NO_FAIL(con.Query("SET wal_autocheckpoint = '1KB'"));
 			run("commit that checkpoints", "COMMIT");
 			// the commit checkpointed: it left no write-ahead log
