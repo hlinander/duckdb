@@ -79,6 +79,8 @@ void ProfilingUtils::SetMetricToDefault(profiler_metrics_t &metrics, const Metri
 	case MetricType::CUMULATIVE_ROWS_SCANNED:
 	case MetricType::CUMULATIVE_ROW_GROUPS_SCANNED:
 	case MetricType::CUMULATIVE_TOTAL_ROW_GROUPS_TO_SCAN:
+	case MetricType::OPERATOR_BYTES_READ:
+	case MetricType::OPERATOR_BYTES_WRITTEN:
 	case MetricType::OPERATOR_CARDINALITY:
 	case MetricType::OPERATOR_ROWS_SCANNED:
 	case MetricType::OPERATOR_ROW_GROUPS_SCANNED:
@@ -137,6 +139,8 @@ void ProfilingUtils::MetricToJson(duckdb_yyjson::yyjson_mut_doc *doc, duckdb_yyj
 	case MetricType::CUMULATIVE_ROWS_SCANNED:
 	case MetricType::CUMULATIVE_ROW_GROUPS_SCANNED:
 	case MetricType::CUMULATIVE_TOTAL_ROW_GROUPS_TO_SCAN:
+	case MetricType::OPERATOR_BYTES_READ:
+	case MetricType::OPERATOR_BYTES_WRITTEN:
 	case MetricType::OPERATOR_CARDINALITY:
 	case MetricType::OPERATOR_ROWS_SCANNED:
 	case MetricType::OPERATOR_ROW_GROUPS_SCANNED:

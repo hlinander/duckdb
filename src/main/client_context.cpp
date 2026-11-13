@@ -192,7 +192,7 @@ ClientContext::~ClientContext() {
 }
 
 unique_ptr<ClientContextLock> ClientContext::LockContext() {
-	return make_uniq<ClientContextLock>(context_lock);
+	return make_uniq<ClientContextLock>(context_lock, *this);
 }
 
 void ClientContext::Destroy() {

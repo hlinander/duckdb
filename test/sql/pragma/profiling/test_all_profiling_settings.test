@@ -45,6 +45,8 @@ SELECT unnest(res) FROM (
 "CUMULATIVE_VACUUM_TIME": "true"
 "EXTRA_INFO": "true"
 "LATENCY": "true"
+"OPERATOR_BYTES_READ": "true"
+"OPERATOR_BYTES_WRITTEN": "true"
 "OPERATOR_CARDINALITY": "true"
 "OPERATOR_CPU_TIME": "true"
 "OPERATOR_NAME": "true"

@@ -3152,6 +3152,8 @@ const StringUtil::EnumStringLiteral *GetMetricTypeValues() {
 		{ static_cast<uint32_t>(MetricType::WAITING_TO_ATTACH_LATENCY), "WAITING_TO_ATTACH_LATENCY" },
 		{ static_cast<uint32_t>(MetricType::WAL_REPLAY_ENTRY_COUNT), "WAL_REPLAY_ENTRY_COUNT" },
 		{ static_cast<uint32_t>(MetricType::WRITE_TO_WAL_LATENCY), "WRITE_TO_WAL_LATENCY" },
+		{ static_cast<uint32_t>(MetricType::OPERATOR_BYTES_READ), "OPERATOR_BYTES_READ" },
+		{ static_cast<uint32_t>(MetricType::OPERATOR_BYTES_WRITTEN), "OPERATOR_BYTES_WRITTEN" },
 		{ static_cast<uint32_t>(MetricType::OPERATOR_CARDINALITY), "OPERATOR_CARDINALITY" },
 		{ static_cast<uint32_t>(MetricType::OPERATOR_CPU_TIME), "OPERATOR_CPU_TIME" },
 		{ static_cast<uint32_t>(MetricType::OPERATOR_NAME), "OPERATOR_NAME" },
@@ -3207,12 +3209,12 @@ const StringUtil::EnumStringLiteral *GetMetricTypeValues() {
 
 template<>
 const char* EnumUtil::ToChars<MetricType>(MetricType value) {
-	return StringUtil::EnumToString(GetMetricTypeValues(), 74, "MetricType", static_cast<uint32_t>(value));
+	return StringUtil::EnumToString(GetMetricTypeValues(), 76, "MetricType", static_cast<uint32_t>(value));
 }
 
 template<>
 MetricType EnumUtil::FromString<MetricType>(const char *value) {
-	return static_cast<MetricType>(StringUtil::StringToEnum(GetMetricTypeValues(), 74, "MetricType", value));
+	return static_cast<MetricType>(StringUtil::StringToEnum(GetMetricTypeValues(), 76, "MetricType", value));
 }
 
 const StringUtil::EnumStringLiteral *GetMultiFileColumnMappingModeValues() {

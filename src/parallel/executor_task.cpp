@@ -2,6 +2,7 @@
 #include "duckdb/parallel/task_notifier.hpp"
 #include "duckdb/execution/executor.hpp"
 #include "duckdb/main/client_context.hpp"
+#include "duckdb/main/resource_scope.hpp"
 #include "duckdb/parallel/thread_context.hpp"
 
 namespace duckdb {
@@ -36,6 +37,8 @@ void ExecutorTask::Reschedule() {
 
 TaskExecutionResult ExecutorTask::Execute(TaskExecutionMode mode) {
 	try {
+		// the CPU this thread spends on the task is charged to the task's connection
+		ResourceScopeGuard scope_guard(context);
 		if (thread_context) {
 			TaskExecutionResult result;
 			do {

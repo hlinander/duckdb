@@ -8,6 +8,7 @@
 #include "duckdb/main/client_data.hpp"
 #include "duckdb/main/database.hpp"
 #include "duckdb/main/database_file_opener.hpp"
+#include "duckdb/main/resource_scope.hpp"
 #include "duckdb/main/settings.hpp"
 
 #ifdef DISABLE_DUCKDB_REMOTE_INSTALL
@@ -545,21 +546,78 @@ unique_ptr<HTTPParams> HTTPUtil::InitializeParameters(optional_ptr<FileOpener> o
 	return result;
 }
 
+//! Restores the content handler of a GET request that Request replaced for the duration of one call
+struct ContentHandlerRestore {
+	ContentHandlerRestore(GetRequestInfo &info_p, idx_t &bytes_read) : info(info_p) {
+		original = std::move(info.content_handler);
+		info.content_handler = [this, &bytes_read](const_data_ptr_t data, idx_t data_length) {
+			bytes_read += data_length;
+			return original(data, data_length);
+		};
+	}
+	~ContentHandlerRestore() {
+		info.content_handler = std::move(original);
+	}
+
+	GetRequestInfo &info;
+	std::function<bool(const_data_ptr_t data, idx_t data_length)> original;
+};
+
 unique_ptr<HTTPResponse> HTTPClient::Request(BaseRequest &request) {
+	// The bytes of the response body are counted in exactly one place for each request.
+	// An attempt that throws counts nothing.
+	unique_ptr<HTTPResponse> response;
+	idx_t bytes_read = 0;
 	switch (request.type) {
-	case RequestType::GET_REQUEST:
-		return Get(request.Cast<GetRequestInfo>());
+	case RequestType::GET_REQUEST: {
+		auto &info = request.Cast<GetRequestInfo>();
+		if (info.content_handler) {
+			// count the bytes the client passes to the handler; the body is not counted for this request
+			ContentHandlerRestore restore(info, bytes_read);
+			response = Get(info);
+		} else {
+			response = Get(info);
+			if (response) {
+				bytes_read = response->body.size();
+			}
+		}
+		break;
+	}
 	case RequestType::PUT_REQUEST:
-		return Put(request.Cast<PutRequestInfo>());
+		response = Put(request.Cast<PutRequestInfo>());
+		if (response) {
+			bytes_read = response->body.size();
+		}
+		break;
 	case RequestType::HEAD_REQUEST:
-		return Head(request.Cast<HeadRequestInfo>());
+		response = Head(request.Cast<HeadRequestInfo>());
+		if (response) {
+			bytes_read = response->body.size();
+		}
+		break;
 	case RequestType::DELETE_REQUEST:
-		return Delete(request.Cast<DeleteRequestInfo>());
+		response = Delete(request.Cast<DeleteRequestInfo>());
+		if (response) {
+			bytes_read = response->body.size();
+		}
+		break;
 	case RequestType::POST_REQUEST:
-		return Post(request.Cast<PostRequestInfo>());
+		// the response body of a POST is not counted
+		response = Post(request.Cast<PostRequestInfo>());
+		break;
 	default:
 		throw InternalException("Unsupported request type");
 	}
+	// a server that refuses a request can answer before it has read the body
+	idx_t bytes_written = 0;
+	if (response) {
+		auto status = static_cast<uint16_t>(response->status);
+		if (status >= 200 && status < 300) {
+			bytes_written = request.request_body_length;
+		}
+	}
+	ResourceScope::AddTransferredBytes(bytes_read, bytes_written);
+	return response;
 }
 
 bool HTTPUtil::IsHTTPProtocol(const string &url) {

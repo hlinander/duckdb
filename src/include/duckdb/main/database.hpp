@@ -15,6 +15,7 @@
 #include "duckdb/main/valid_checker.hpp"
 #include "duckdb/main/extension/extension_loader.hpp"
 #include "duckdb/main/extension_manager.hpp"
+#include "duckdb/main/resource_scope.hpp"
 
 namespace duckdb {
 class LocalDatabaseFileSystem;
@@ -45,6 +46,17 @@ public:
 	DUCKDB_API ~DatabaseInstance();
 
 	DBConfig config;
+
+	//! The cumulative resource totals of all connections of this database, and of work that belongs to no
+	//! connection. Nothing resets them, and they do not depend on the profiling configuration.
+	//! The CPU time threads spent in scopes that name this database, in nanoseconds
+	atomic<uint64_t> cpu_ns;
+	//! The bytes transferred in scopes that name this database
+	atomic<uint64_t> bytes_read;
+	atomic<uint64_t> bytes_written;
+	//! The key under which every engine copy of the process addresses the per-thread ResourceScope slot.
+	//! Another copy of the engine receives it through ResourceScope::SetKey.
+	ResourceScopeKey scope_key;
 
 public:
 	BufferPool &GetBufferPool() const;

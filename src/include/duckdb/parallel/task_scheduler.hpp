@@ -68,6 +68,10 @@ public:
 
 	//! Returns the number of threads
 	DUCKDB_API int32_t NumberOfThreads();
+	//! Returns the database this scheduler belongs to
+	DatabaseInstance &GetDatabase() {
+		return db;
+	}
 
 	idx_t GetNumberOfTasks() const;
 	idx_t GetProducerCount() const;

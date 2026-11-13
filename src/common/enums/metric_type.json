@@ -384,6 +384,22 @@
         "type": "double",
         "unit": "seconds",
         "is_default": true
+      },
+      {
+        "name": "OPERATOR_BYTES_READ",
+        "enum_value": 106,
+        "description": "Bytes the operator read through the local file system and the HTTP client",
+        "type": "uint64",
+        "unit": "bytes",
+        "is_default": false
+      },
+      {
+        "name": "OPERATOR_BYTES_WRITTEN",
+        "enum_value": 107,
+        "description": "Bytes the operator wrote through the local file system and the HTTP client",
+        "type": "uint64",
+        "unit": "bytes",
+        "is_default": false
       }
     ]
   },

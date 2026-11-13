@@ -24,6 +24,8 @@ profiler_settings_t MetricsUtils::GetAllMetrics() {
 		MetricType::CUMULATIVE_VACUUM_TIME,
 		MetricType::EXTRA_INFO,
 		MetricType::LATENCY,
+		MetricType::OPERATOR_BYTES_READ,
+		MetricType::OPERATOR_BYTES_WRITTEN,
 		MetricType::OPERATOR_CARDINALITY,
 		MetricType::OPERATOR_CPU_TIME,
 		MetricType::OPERATOR_NAME,
@@ -268,6 +270,8 @@ bool MetricsUtils::IsFileMetric(MetricType type) {
 
 profiler_settings_t MetricsUtils::GetOperatorMetrics() {
 	return {
+		MetricType::OPERATOR_BYTES_READ,
+		MetricType::OPERATOR_BYTES_WRITTEN,
 		MetricType::OPERATOR_CARDINALITY,
 		MetricType::OPERATOR_CPU_TIME,
 		MetricType::OPERATOR_NAME,
@@ -281,6 +285,8 @@ profiler_settings_t MetricsUtils::GetOperatorMetrics() {
 
 bool MetricsUtils::IsOperatorMetric(MetricType type) {
 	switch(type) {
+	case MetricType::OPERATOR_BYTES_READ:
+	case MetricType::OPERATOR_BYTES_WRITTEN:
 	case MetricType::OPERATOR_CARDINALITY:
 	case MetricType::OPERATOR_CPU_TIME:
 	case MetricType::OPERATOR_NAME:

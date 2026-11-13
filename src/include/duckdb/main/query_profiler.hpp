@@ -27,10 +27,12 @@
 #include "duckdb/execution/physical_operator.hpp"
 #include "duckdb/main/profiling_node.hpp"
 #include "duckdb/main/profiling_utils.hpp"
+#include "duckdb/main/resource_scope.hpp"
 
 namespace duckdb {
 
 class ClientContext;
+class DatabaseInstance;
 class ExpressionExecutor;
 class ProfilingNode;
 class PhysicalOperator;
@@ -54,6 +56,9 @@ struct OperatorInformation {
 	idx_t rows_scanned = 0;
 	idx_t row_groups_scanned = 0;
 	optional_idx total_row_groups_to_scan;
+	//! The bytes transferred inside the operator's scope, written by ResourceScope::AddTransferredBytes
+	idx_t bytes_read = 0;
+	idx_t bytes_written = 0;
 
 	InsertionOrderPreservingMap<string> extra_info;
 
@@ -131,8 +136,12 @@ private:
 
 	//! The timer used to time the execution time of the individual Physical Operators
 	Profiler op;
-	//! Thread CPU time profiler for measuring actual CPU time per operator
-	ThreadCPUProfiler cpu_op;
+	//! The scope that charges the CPU of the active operator to the totals of the connection and its database.
+	//! It runs under every profiling configuration.
+	ResourceScope scope;
+	//! The holders of the totals the scope names
+	QueryProfiler &query_profiler;
+	DatabaseInstance &db;
 	//! The stack of Physical Operators that are currently active
 	optional_ptr<const PhysicalOperator> active_operator;
 	//! A mapping of physical operators to profiled operator information.
@@ -229,6 +238,16 @@ private:
 private:
 	ClientContext &context;
 
+public:
+	//! The cumulative resource totals of the connection. Every writer adds the same amount to the totals of the
+	//! same name in DatabaseInstance. Nothing resets them, and they do not depend on the profiling configuration.
+	//! The CPU time threads spent in scopes that name this connection, in nanoseconds
+	atomic<uint64_t> cpu_ns;
+	//! The bytes transferred in scopes that name this connection
+	atomic<uint64_t> bytes_read;
+	atomic<uint64_t> bytes_written;
+
+private:
 	//! Whether or not the query profiler is running
 	bool running;
 	//! The lock used for accessing the global query profiler or flushing information to it from a thread

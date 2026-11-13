@@ -25,8 +25,8 @@ using namespace duckdb_yyjson; // NOLINT
 namespace duckdb {
 
 QueryProfiler::QueryProfiler(ClientContext &context_p)
-    : context(context_p), running(false), query_requires_profiling(false), is_explain_analyze(false),
-      metrics_finalized(false) {
+    : context(context_p), cpu_ns(0), bytes_read(0), bytes_written(0), running(false), query_requires_profiling(false),
+      is_explain_analyze(false), metrics_finalized(false) {
 }
 
 bool QueryProfiler::IsEnabled() const {
@@ -327,8 +327,9 @@ void QueryProfiler::EndPhase() {
 	}
 }
 
-OperatorProfiler::OperatorProfiler(ClientContext &context) : context(context) {
-	enabled = QueryProfiler::Get(context).IsEnabled();
+OperatorProfiler::OperatorProfiler(ClientContext &context)
+    : context(context), query_profiler(QueryProfiler::Get(context)), db(DatabaseInstance::GetDatabase(context)) {
+	enabled = query_profiler.IsEnabled();
 	auto &context_metrics = ClientConfig::GetConfig(context).profiler_settings;
 
 	// Expand.
@@ -379,6 +380,8 @@ static void AddEstimatedTableScanRowsScanned(ClientContext &context, OperatorInf
 }
 
 void OperatorProfiler::StartOperator(optional_ptr<const PhysicalOperator> phys_op) {
+	// the operator scope opens under every profiling configuration
+	scope.Open(&query_profiler, db);
 	if (!enabled) {
 		return;
 	}
@@ -401,13 +404,16 @@ void OperatorProfiler::StartOperator(optional_ptr<const PhysicalOperator> phys_o
 		if (ProfilingInfo::Enabled(settings, MetricType::OPERATOR_TIMING)) {
 			op.Start();
 		}
-		if (ProfilingInfo::Enabled(settings, MetricType::OPERATOR_CPU_TIME)) {
-			cpu_op.Start();
+		if (ProfilingInfo::Enabled(settings, MetricType::OPERATOR_BYTES_READ) ||
+		    ProfilingInfo::Enabled(settings, MetricType::OPERATOR_BYTES_WRITTEN)) {
+			// the bytes transferred inside the scope are added to the pending information of the operator
+			scope.SetOperatorInfo(GetOperatorInfo(*active_operator));
 		}
 	}
 }
 
 void OperatorProfiler::EndOperator(optional_ptr<DataChunk> chunk) {
+	auto scope_cpu_ns = scope.Close();
 	if (!enabled) {
 		return;
 	}
@@ -422,8 +428,7 @@ void OperatorProfiler::EndOperator(optional_ptr<DataChunk> chunk) {
 			info.AddMetric(MetricType::OPERATOR_TIMING, op.Elapsed());
 		}
 		if (ProfilingInfo::Enabled(settings, MetricType::OPERATOR_CPU_TIME)) {
-			cpu_op.End();
-			info.AddMetric(MetricType::OPERATOR_CPU_TIME, cpu_op.Elapsed());
+			info.AddMetric(MetricType::OPERATOR_CPU_TIME, static_cast<double>(scope_cpu_ns) / 1e9);
 		}
 		if (ProfilingInfo::Enabled(settings, MetricType::OPERATOR_CARDINALITY) && chunk) {
 			info.AddMetric(MetricType::OPERATOR_CARDINALITY, chunk->size());
@@ -542,6 +547,9 @@ static void MergeOperatorExtraInfo(const InsertionOrderPreservingMap<string> &lo
 void QueryProfiler::Flush(OperatorProfiler &profiler) {
 	lock_guard<std::mutex> guard(lock);
 	if (!IsEnabled() || !running) {
+		// figures retained here would reach the tree of a later statement
+		profiler.scope.ClearOperatorInfo();
+		profiler.operator_infos.clear();
 		return;
 	}
 	for (auto &node : profiler.operator_infos) {
@@ -557,6 +565,12 @@ void QueryProfiler::Flush(OperatorProfiler &profiler) {
 		}
 		if (ProfilingInfo::Enabled(profiler.settings, MetricType::OPERATOR_CPU_TIME)) {
 			info.MetricSum<double>(MetricType::OPERATOR_CPU_TIME, node.second.cpu_time);
+		}
+		if (ProfilingInfo::Enabled(profiler.settings, MetricType::OPERATOR_BYTES_READ)) {
+			info.MetricSum<idx_t>(MetricType::OPERATOR_BYTES_READ, node.second.bytes_read);
+		}
+		if (ProfilingInfo::Enabled(profiler.settings, MetricType::OPERATOR_BYTES_WRITTEN)) {
+			info.MetricSum<idx_t>(MetricType::OPERATOR_BYTES_WRITTEN, node.second.bytes_written);
 		}
 		if (ProfilingInfo::Enabled(profiler.settings, MetricType::OPERATOR_CARDINALITY)) {
 			info.MetricSum<idx_t>(MetricType::OPERATOR_CARDINALITY, node.second.elements_returned);
@@ -587,6 +601,7 @@ void QueryProfiler::Flush(OperatorProfiler &profiler) {
 			                                          node.second.system_peak_temp_directory_size);
 		}
 	}
+	profiler.scope.ClearOperatorInfo();
 	profiler.operator_infos.clear();
 }
 

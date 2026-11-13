@@ -47,6 +47,7 @@ add_library_unity(
   relation.cpp
   query_profiler.cpp
   query_result.cpp
+  resource_scope.cpp
   result_set_manager.cpp
   stream_query_result.cpp
   user_settings.cpp

@@ -9,6 +9,7 @@
 #include "duckdb/function/scalar/string_common.hpp"
 #include "duckdb/main/client_context.hpp"
 #include "duckdb/main/database.hpp"
+#include "duckdb/main/resource_scope.hpp"
 #include "duckdb/logging/file_system_logger.hpp"
 #include "duckdb/logging/log_manager.hpp"
 #include "duckdb/common/multi_file/multi_file_list.hpp"
@@ -497,6 +498,7 @@ void LocalFileSystem::Read(FileHandle &handle, void *buffer, int64_t nr_bytes, i
 			    "Could not read enough bytes from file \"%s\": attempted to read %llu bytes from location %llu",
 			    handle.path, nr_bytes, location);
 		}
+		ResourceScope::AddTransferredBytes(UnsafeNumericCast<idx_t>(bytes_read), 0);
 		read_buffer += bytes_read;
 		nr_bytes -= bytes_read;
 		location += UnsafeNumericCast<idx_t>(bytes_read);
@@ -512,6 +514,10 @@ int64_t LocalFileSystem::Read(FileHandle &handle, void *buffer, int64_t nr_bytes
 	if (bytes_read == -1) {
 		throw IOException({{"errno", std::to_string(errno)}}, "Could not read from file \"%s\": %s", handle.path,
 		                  strerror(errno));
+	}
+
+	if (bytes_read > 0) {
+		ResourceScope::AddTransferredBytes(UnsafeNumericCast<idx_t>(bytes_read), 0);
 	}
 
 	DUCKDB_LOG_FILE_SYSTEM_READ(handle, bytes_read, unix_handle.current_pos);
@@ -539,6 +545,7 @@ void LocalFileSystem::Write(FileHandle &handle, void *buffer, int64_t nr_bytes, 
 			                  "Could not write to file \"%s\" - attempted to write 0 bytes: %s", handle.path,
 			                  strerror(errno));
 		}
+		ResourceScope::AddTransferredBytes(0, UnsafeNumericCast<idx_t>(bytes_written));
 		write_buffer += bytes_written;
 		bytes_to_write -= bytes_written;
 		current_location += UnsafeNumericCast<idx_t>(bytes_written);
@@ -560,6 +567,7 @@ int64_t LocalFileSystem::Write(FileHandle &handle, void *buffer, int64_t nr_byte
 			throw IOException({{"errno", std::to_string(errno)}}, "Could not write file \"%s\": %s", handle.path,
 			                  strerror(errno));
 		}
+		ResourceScope::AddTransferredBytes(0, UnsafeNumericCast<idx_t>(current_bytes_written));
 		buffer = (void *)(data_ptr_cast(buffer) + current_bytes_written);
 		bytes_to_write -= current_bytes_written;
 	}

@@ -1,6 +1,7 @@
 #include "duckdb/parallel/task_executor.hpp"
 #include "duckdb/parallel/task_notifier.hpp"
 #include "duckdb/parallel/task_scheduler.hpp"
+#include "duckdb/main/resource_scope.hpp"
 
 #include <thread>
 
@@ -74,6 +75,8 @@ TaskExecutionResult BaseExecutorTask::Execute(TaskExecutionMode mode) {
 	}
 	try {
 		{
+			// a task without a connection charges its CPU to the database alone
+			ResourceScopeGuard scope_guard(executor.context, executor.scheduler.GetDatabase());
 			TaskNotifier task_notifier {executor.context};
 			ExecuteTask();
 		}

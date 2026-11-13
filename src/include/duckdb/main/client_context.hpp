@@ -29,6 +29,7 @@
 #include "duckdb/planner/expression/bound_parameter_data.hpp"
 #include "duckdb/transaction/transaction_context.hpp"
 #include "duckdb/main/query_parameters.hpp"
+#include "duckdb/main/resource_scope.hpp"
 
 namespace duckdb {
 
@@ -326,7 +327,7 @@ private:
 
 class ClientContextLock {
 public:
-	explicit ClientContextLock(mutex &context_lock) : client_guard(context_lock) {
+	ClientContextLock(mutex &context_lock, ClientContext &context) : client_guard(context_lock), scope_guard(context) {
 	}
 
 	~ClientContextLock() {
@@ -334,6 +335,9 @@ public:
 
 private:
 	lock_guard<mutex> client_guard;
+	//! Charges the CPU the thread spends while it holds the lock to the connection.
+	//! Declared after the lock: constructed once the lock is taken, destroyed before it is released.
+	ResourceScopeGuard scope_guard;
 };
 
 //! The QueryContext wraps an optional client context.
