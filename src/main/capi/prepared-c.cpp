@@ -35,6 +35,7 @@ idx_t duckdb_extract_statements(duckdb_connection connection, const char *query,
 	} catch (const std::exception &ex) {
 		ErrorData error(ex);
 		wrapper->error = error.Message();
+		wrapper->error_type = error.Type();
 	}
 
 	*out_extracted_statements = (duckdb_extracted_statements)wrapper;
@@ -81,6 +82,14 @@ const char *duckdb_extract_statements_error(duckdb_extracted_statements extracte
 	return wrapper->error.c_str();
 }
 
+duckdb_error_type duckdb_extract_statements_error_type(duckdb_extracted_statements extracted_statements) {
+	auto wrapper = (ExtractStatementsWrapper *)extracted_statements;
+	if (!wrapper || wrapper->error.empty()) {
+		return DUCKDB_ERROR_INVALID;
+	}
+	return duckdb::ErrorTypeToC(wrapper->error_type);
+}
+
 duckdb_state duckdb_prepare(duckdb_connection connection, const char *query,
                             duckdb_prepared_statement *out_prepared_statement) {
 	if (!connection || !query || !out_prepared_statement) {
@@ -114,6 +123,20 @@ const char *duckdb_prepare_error(duckdb_prepared_statement prepared_statement) {
 		return nullptr;
 	}
 	return wrapper->statement->error.Message().c_str();
+}
+
+duckdb_error_type duckdb_prepare_error_type(duckdb_prepared_statement prepared_statement) {
+	auto wrapper = reinterpret_cast<PreparedStatementWrapper *>(prepared_statement);
+	if (!wrapper) {
+		return DUCKDB_ERROR_INVALID;
+	}
+	if (!wrapper->success) {
+		return duckdb::ErrorTypeToC(wrapper->error_data.Type());
+	}
+	if (!wrapper->statement || !wrapper->statement->HasError()) {
+		return DUCKDB_ERROR_INVALID;
+	}
+	return duckdb::ErrorTypeToC(wrapper->statement->error.Type());
 }
 
 idx_t duckdb_nparams(duckdb_prepared_statement prepared_statement) {

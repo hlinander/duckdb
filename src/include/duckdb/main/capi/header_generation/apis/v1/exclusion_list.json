@@ -7,6 +7,13 @@
                 "duckdb_begin_measured",
                 "duckdb_end_measured"
             ]
+        },
+        {
+            "reason": "The error-type functions serve the host application's client library; leaving them out keeps the layout of the extension API struct.",
+            "entries": [
+                "duckdb_prepare_error_type",
+                "duckdb_extract_statements_error_type"
+            ]
         }
     ]
 }

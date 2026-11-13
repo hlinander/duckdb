@@ -1941,6 +1941,14 @@ The error message should not be freed. It will be de-allocated when `duckdb_dest
 DUCKDB_C_API const char *duckdb_prepare_error(duckdb_prepared_statement prepared_statement);
 
 /*!
+Returns the type of the error whose message `duckdb_prepare_error` returns for the given prepared statement.
+
+* @param prepared_statement The prepared statement to obtain the error type from.
+* @return The error type, or `DUCKDB_ERROR_INVALID` if the prepared statement holds no error or is `nullptr`.
+*/
+DUCKDB_C_API duckdb_error_type duckdb_prepare_error_type(duckdb_prepared_statement prepared_statement);
+
+/*!
 Returns the number of parameters that can be provided to the given prepared statement.
 
 Returns 0 if the query was not successfully prepared.
@@ -2291,6 +2299,14 @@ The result of this function must not be freed. It will be cleaned up when `duckd
 * @return The error of the extracted statements.
 */
 DUCKDB_C_API const char *duckdb_extract_statements_error(duckdb_extracted_statements extracted_statements);
+
+/*!
+Returns the type of the error whose message `duckdb_extract_statements_error` returns for the extracted statements.
+
+* @param extracted_statements The extracted statements to fetch the error type from.
+* @return The error type, or `DUCKDB_ERROR_INVALID` if the extraction succeeded or the argument is `nullptr`.
+*/
+DUCKDB_C_API duckdb_error_type duckdb_extract_statements_error_type(duckdb_extracted_statements extracted_statements);
 
 /*!
 De-allocates all memory allocated for the extracted statements.

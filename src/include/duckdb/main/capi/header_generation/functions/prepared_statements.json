@@ -64,6 +64,23 @@
             }
         },
         {
+            "name": "duckdb_prepare_error_type",
+            "return_type": "duckdb_error_type",
+            "params": [
+                {
+                    "type": "duckdb_prepared_statement",
+                    "name": "prepared_statement"
+                }
+            ],
+            "comment": {
+                "description": "Returns the type of the error whose message `duckdb_prepare_error` returns for the given prepared statement.\n\n",
+                "param_comments": {
+                    "prepared_statement": "The prepared statement to obtain the error type from."
+                },
+                "return_value": "The error type, or `DUCKDB_ERROR_INVALID` if the prepared statement holds no error or is `nullptr`."
+            }
+        },
+        {
             "name": "duckdb_nparams",
             "return_type": "idx_t",
             "params": [

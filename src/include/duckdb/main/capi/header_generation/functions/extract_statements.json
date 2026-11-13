@@ -80,6 +80,23 @@
             }
         },
         {
+            "name": "duckdb_extract_statements_error_type",
+            "return_type": "duckdb_error_type",
+            "params": [
+                {
+                    "type": "duckdb_extracted_statements",
+                    "name": "extracted_statements"
+                }
+            ],
+            "comment": {
+                "description": "Returns the type of the error whose message `duckdb_extract_statements_error` returns for the extracted statements.\n\n",
+                "param_comments": {
+                    "extracted_statements": "The extracted statements to fetch the error type from."
+                },
+                "return_value": "The error type, or `DUCKDB_ERROR_INVALID` if the extraction succeeded or the argument is `nullptr`."
+            }
+        },
+        {
             "name": "duckdb_destroy_extracted",
             "return_type": "void",
             "params": [

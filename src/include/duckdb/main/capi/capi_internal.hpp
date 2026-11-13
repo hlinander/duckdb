@@ -59,6 +59,8 @@ struct PreparedStatementWrapper {
 struct ExtractStatementsWrapper {
 	vector<unique_ptr<SQLStatement>> statements;
 	string error;
+	//! The type of the failure "error" describes; INVALID where extraction succeeded
+	ExceptionType error_type = ExceptionType::INVALID;
 };
 
 struct PendingStatementWrapper {
