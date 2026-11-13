@@ -1,4 +1,5 @@
 #include "duckdb/main/query_profiler.hpp"
+#include "duckdb/main/settings.hpp"
 
 #include "duckdb/common/enums/metric_type.hpp"
 #include "duckdb/common/fstream.hpp"
@@ -25,8 +26,8 @@ using namespace duckdb_yyjson; // NOLINT
 namespace duckdb {
 
 QueryProfiler::QueryProfiler(ClientContext &context_p)
-    : context(context_p), cpu_ns(0), bytes_read(0), bytes_written(0), running(false), query_requires_profiling(false),
-      is_explain_analyze(false), metrics_finalized(false) {
+    : context(context_p), cpu_ns(0), bytes_read(0), bytes_written(0), measured_bracket(false), running(false),
+      query_requires_profiling(false), is_explain_analyze(false), metrics_finalized(false) {
 }
 
 bool QueryProfiler::IsEnabled() const {
@@ -330,6 +331,7 @@ void QueryProfiler::EndPhase() {
 OperatorProfiler::OperatorProfiler(ClientContext &context)
     : context(context), query_profiler(QueryProfiler::Get(context)), db(DatabaseInstance::GetDatabase(context)) {
 	enabled = query_profiler.IsEnabled();
+	operator_clock = !Settings::Get<TaskBoundaryCpuClockSetting>(context);
 	auto &context_metrics = ClientConfig::GetConfig(context).profiler_settings;
 
 	// Expand.
@@ -381,7 +383,7 @@ static void AddEstimatedTableScanRowsScanned(ClientContext &context, OperatorInf
 
 void OperatorProfiler::StartOperator(optional_ptr<const PhysicalOperator> phys_op) {
 	// the operator scope opens under every profiling configuration
-	scope.Open(&query_profiler, db);
+	scope.Open(&query_profiler, db, ResourceScopeKind::OPERATOR, operator_clock);
 	if (!enabled) {
 		return;
 	}

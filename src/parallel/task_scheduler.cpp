@@ -268,12 +268,28 @@ bool TaskScheduler::GetTaskFromProducer(ProducerToken &token, shared_ptr<Task> &
 	return queue->DequeueFromProducer(token, task);
 }
 
+#ifndef DUCKDB_NO_THREADS
+struct WorkerScope {
+	explicit WorkerScope(DatabaseInstance &db) {
+		scope.Open(nullptr, db, ResourceScopeKind::WORKER);
+	}
+	~WorkerScope() {
+		scope.Close();
+	}
+
+	ResourceScope scope;
+};
+#endif
+
 void TaskScheduler::ExecuteForever(atomic<bool> *marker) {
 #ifndef DUCKDB_NO_THREADS
 	static constexpr const int64_t INITIAL_FLUSH_WAIT = 500000; // initial wait time of 0.5s (in mus) before flushing
 
 	const auto &block_allocator = BlockAllocator::Get(db);
 	const auto &config = DBConfig::GetConfig(db);
+
+	// the worker scope: the CPU this thread spends between tasks is added to the totals of the database
+	WorkerScope worker_scope(db);
 
 	shared_ptr<Task> task;
 	// loop until the marker is set to false

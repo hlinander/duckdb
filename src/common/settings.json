@@ -1044,6 +1044,13 @@
         "custom_implementation": true
     },
     {
+        "name": "task_boundary_cpu_clock",
+        "description": "Read the thread CPU clock only where a task or the context lock starts and ends, and not at each operator step. The operator CPU time metric is zero while this is set.",
+        "type": "BOOLEAN",
+        "scope": "global",
+        "default_value": "false"
+    },
+    {
         "name": "temp_directory",
         "description": "Set the directory to which to write temp files",
         "type": "VARCHAR",

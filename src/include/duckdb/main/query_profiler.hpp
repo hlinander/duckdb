@@ -139,6 +139,8 @@ private:
 	//! The scope that charges the CPU of the active operator to the totals of the connection and its database.
 	//! It runs under every profiling configuration.
 	ResourceScope scope;
+	//! Whether the operator scope reads the thread CPU clock: false under task_boundary_cpu_clock
+	bool operator_clock;
 	//! The holders of the totals the scope names
 	QueryProfiler &query_profiler;
 	DatabaseInstance &db;
@@ -150,6 +152,8 @@ private:
 
 //! QueryProfiler collects the profiling metrics of a query.
 class QueryProfiler {
+	friend class ResourceScopeReference;
+
 public:
 	using TreeMap = reference_map_t<const PhysicalOperator, reference<ProfilingNode>>;
 
@@ -246,6 +250,9 @@ public:
 	//! The bytes transferred in scopes that name this connection
 	atomic<uint64_t> bytes_read;
 	atomic<uint64_t> bytes_written;
+	//! Whether a measured bracket is open: set by duckdb_begin_measured, cleared by duckdb_end_measured.
+	//! A rollback does not reset the profiler while it is set.
+	atomic<bool> measured_bracket;
 
 private:
 	//! Whether or not the query profiler is running
