@@ -18,7 +18,9 @@ static atomic<pthread_key_t> scope_key {};
 static atomic<bool> scope_key_set {false};
 
 static inline bool TryGetSlot(ResourceScope *&result) {
-	if (!scope_key_set.load(std::memory_order_relaxed)) {
+	// the acquire load pairs with the release store of the flag, which follows the store of the key: a thread that
+	// reads the flag as set reads the key that was stored before it
+	if (!scope_key_set.load(std::memory_order_acquire)) {
 		return false;
 	}
 	result = static_cast<ResourceScope *>(pthread_getspecific(scope_key.load(std::memory_order_relaxed)));
@@ -45,8 +47,8 @@ ResourceScopeKey ResourceScope::EnsureKey() {
 		if (pthread_key_create(&key, nullptr) != 0) {
 			return;
 		}
-		scope_key = key;
-		scope_key_set = true;
+		scope_key.store(key, std::memory_order_relaxed);
+		scope_key_set.store(true, std::memory_order_release);
 	});
 	ResourceScopeKey result;
 	result.key = scope_key.load();
@@ -58,8 +60,8 @@ void ResourceScope::SetKey(ResourceScopeKey key) {
 	if (!key.valid || scope_key_set.load()) {
 		return;
 	}
-	scope_key = key.key;
-	scope_key_set = true;
+	scope_key.store(key.key, std::memory_order_relaxed);
+	scope_key_set.store(true, std::memory_order_release);
 }
 
 //! Adds the CPU the scope spent since it last started to the totals it names
