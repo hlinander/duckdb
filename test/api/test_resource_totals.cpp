@@ -183,8 +183,9 @@ struct RunState {
 	bool task_boundary_cpu_clock = false;
 };
 
-//! The assertions that hold for every statement
-void CheckAttempt(const Attempt &attempt, const string &name, RunState &state) {
+//! The assertions that hold for every statement. "expect_operator_node" is false for the commit alone, whose tree
+//! holds no operator.
+void CheckAttempt(const Attempt &attempt, const string &name, RunState &state, bool expect_operator_node = true) {
 	// the database's total starts at zero when the database opens
 	auto database_cpu_total = attempt.close.database.cpu_ns;
 	auto process_cpu_since_database = attempt.after.cpu_ns - state.process_cpu_before_database_ns;
@@ -223,6 +224,11 @@ void CheckAttempt(const Attempt &attempt, const string &name, RunState &state) {
 	REQUIRE(attempt.ConnectionCpu() <= attempt.DatabaseCpu());
 	REQUIRE(attempt.ConnectionBytesRead() <= attempt.DatabaseBytesRead());
 	REQUIRE(attempt.ConnectionBytesWritten() <= attempt.DatabaseBytesWritten());
+
+	// the assertions on the tree below test a tree that exists
+	if (expect_operator_node) {
+		REQUIRE(attempt.tree.operator_nodes > 0);
+	}
 
 	// the tree divides the connection's totals: the tree holds seconds in a double, one nanosecond for each node
 	REQUIRE(attempt.tree.cpu_seconds * 1e9 <= double(attempt.ConnectionCpu()) + double(attempt.tree.nodes));
@@ -351,9 +357,9 @@ TEST_CASE("Test that the resource totals cover what the process spent", "[api]")
 			fprintf(stderr, "task_boundary_cpu_clock = %s\n", pass == 1 ? "true" : "false");
 		}
 
-		auto run = [&](const string &name, const string &query) {
+		auto run = [&](const string &name, const string &query, bool expect_operator_node = true) {
 			auto attempt = Measure(con, name, [&]() { REQUIRE_NO_FAIL(con.Query(query)); });
-			CheckAttempt(attempt, name, state);
+			CheckAttempt(attempt, name, state, expect_operator_node);
 			REQUIRE(!attempt.abandoned);
 			return attempt;
 		};
@@ -436,7 +442,7 @@ TEST_CASE("Test that the resource totals cover what the process spent", "[api]")
 			// each pass deletes rows the other leaves
 			REQUIRE_NO_FAIL(con.Query("DELETE FROM checkpointed WHERE i % 3 = " + to_string(pass)));
 			REQUIRE_NO_FAIL(con.Query("SET wal_autocheckpoint = '1KB'"));
-			run("commit that checkpoints", "COMMIT");
+			run("commit that checkpoints", "COMMIT", false);
 			// the commit checkpointed: it left no write-ahead log
 			struct stat st;
 			REQUIRE((stat((db_path + ".wal").c_str(), &st) != 0 || st.st_size == 0));
