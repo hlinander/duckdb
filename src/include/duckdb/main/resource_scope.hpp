@@ -34,6 +34,22 @@ struct ResourceScopeKey {
 	bool valid;
 };
 
+//! Three cumulative resource totals. A QueryProfiler holds one block for its connection and a DatabaseInstance holds
+//! one for all of its connections and for work that belongs to no connection. Each owner holds its block through a
+//! shared_ptr, and a ResourceScopeReference holds the block and not the owner, so a thread the engine does not join
+//! can add to a block after its owner is destroyed. Nothing resets a total, and the totals do not depend on the
+//! profiling configuration.
+struct ResourceTotals : public enable_shared_from_this<ResourceTotals> {
+	ResourceTotals() : cpu_ns(0), bytes_read(0), bytes_written(0) {
+	}
+
+	//! The CPU time threads spent in scopes that name this block, in nanoseconds
+	atomic<uint64_t> cpu_ns;
+	//! The bytes transferred in scopes that name this block
+	atomic<uint64_t> bytes_read;
+	atomic<uint64_t> bytes_written;
+};
+
 //! The kind of a scope decides whether a plain scope opens above it
 enum class ResourceScopeKind : uint8_t {
 	//! Opened by OperatorProfiler::StartOperator
@@ -94,13 +110,17 @@ public:
 private:
 	//! The scope that accumulates while "innermost" is the innermost scope: the nearest one that read the clock
 	static ResourceScope *Accumulating(ResourceScope *innermost);
+	//! Opens this scope on the two blocks given; "connection_totals" is null for a scope that names a database alone.
+	//! The caller keeps both blocks alive until the scope closes.
+	void OpenInternal(ResourceTotals *connection_totals, ResourceTotals &database_totals, ResourceScopeKind kind,
+	                  bool read_clock);
 
 private:
 	//! The scope beneath this one on the same thread
 	ResourceScope *parent = nullptr;
 	//! The totals this scope names; "connection" is null for a scope that names a database alone
-	QueryProfiler *connection = nullptr;
-	DatabaseInstance *database = nullptr;
+	ResourceTotals *connection = nullptr;
+	ResourceTotals *database = nullptr;
 	//! The pending information of the operator, for an operator scope whose profiler collects it
 	OperatorInformation *operator_info = nullptr;
 	//! The thread CPU clock reading at which this scope last started accumulating
@@ -112,8 +132,9 @@ private:
 	bool open = false;
 };
 
-//! A copyable reference to the totals a scope names. It does not extend the life of the connection or the database:
-//! a scope opened from a reference whose owner is gone does not open.
+//! A copyable reference to the totals a scope names. It holds the two ResourceTotals blocks and holds neither the
+//! connection nor the database, so it does not extend the life of either. A scope opened from a reference adds to
+//! those blocks; if the connection or the database has been destroyed, it adds to a block that nobody reads again.
 class ResourceScopeReference {
 	friend class ResourceScopeGuard;
 
@@ -126,11 +147,10 @@ public:
 	DUCKDB_API static ResourceScopeReference Current();
 
 private:
-	weak_ptr<DatabaseInstance> database;
-	weak_ptr<ClientContext> connection;
-	//! Whether the referenced scope names a connection
-	bool has_connection = false;
-	bool has_database = false;
+	//! The database's block; null in an empty reference
+	shared_ptr<ResourceTotals> database;
+	//! The connection's block; null if the referenced scope names a database alone
+	shared_ptr<ResourceTotals> connection;
 };
 
 //! Opens a plain scope at a place where a thread starts work for a connection (or for a database alone). The scope
@@ -141,20 +161,20 @@ public:
 	DUCKDB_API explicit ResourceScopeGuard(ClientContext &context);
 	//! Names the connection's totals if a context is given, the database's totals alone otherwise
 	DUCKDB_API ResourceScopeGuard(optional_ptr<ClientContext> context, DatabaseInstance &db);
-	//! Names the totals "reference" names. The guard keeps their owners alive until it is destroyed; it opens no
-	//! scope if an owner is gone.
+	//! Names the totals "reference" names. The guard holds the two blocks until it is destroyed, and holds neither
+	//! the connection nor the database. It opens no scope if the reference is empty.
 	DUCKDB_API explicit ResourceScopeGuard(const ResourceScopeReference &reference);
 	DUCKDB_API ~ResourceScopeGuard();
 	ResourceScopeGuard(const ResourceScopeGuard &) = delete;
 	ResourceScopeGuard &operator=(const ResourceScopeGuard &) = delete;
 
 private:
-	void Initialize(optional_ptr<ClientContext> context, DatabaseInstance &db);
+	void Initialize(ResourceTotals *connection_totals, ResourceTotals &database_totals);
 
 private:
-	//! The owners of the totals, held by a guard that was constructed from a reference
-	shared_ptr<DatabaseInstance> database_owner;
-	shared_ptr<ClientContext> connection_owner;
+	//! The blocks the scope adds to, held by a guard that was constructed from a reference
+	shared_ptr<ResourceTotals> database_totals;
+	shared_ptr<ResourceTotals> connection_totals;
 	ResourceScope scope;
 	//! The innermost scope of the thread when the guard was constructed
 	ResourceScope *outer = nullptr;

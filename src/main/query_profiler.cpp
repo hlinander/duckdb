@@ -26,7 +26,7 @@ using namespace duckdb_yyjson; // NOLINT
 namespace duckdb {
 
 QueryProfiler::QueryProfiler(ClientContext &context_p)
-    : context(context_p), cpu_ns(0), bytes_read(0), bytes_written(0), measured_bracket(false), running(false),
+    : context(context_p), resource_totals(make_shared_ptr<ResourceTotals>()), measured_bracket(false), running(false),
       query_requires_profiling(false), is_explain_analyze(false), metrics_finalized(false) {
 }
 

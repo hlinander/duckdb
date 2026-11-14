@@ -152,8 +152,6 @@ private:
 
 //! QueryProfiler collects the profiling metrics of a query.
 class QueryProfiler {
-	friend class ResourceScopeReference;
-
 public:
 	using TreeMap = reference_map_t<const PhysicalOperator, reference<ProfilingNode>>;
 
@@ -245,11 +243,9 @@ private:
 public:
 	//! The cumulative resource totals of the connection. Every writer adds the same amount to the totals of the
 	//! same name in DatabaseInstance. Nothing resets them, and they do not depend on the profiling configuration.
-	//! The CPU time threads spent in scopes that name this connection, in nanoseconds
-	atomic<uint64_t> cpu_ns;
-	//! The bytes transferred in scopes that name this connection
-	atomic<uint64_t> bytes_read;
-	atomic<uint64_t> bytes_written;
+	//! The block is separate from the profiler, so a ResourceScopeReference can hold it without holding the
+	//! connection.
+	shared_ptr<ResourceTotals> resource_totals;
 	//! Whether a measured bracket is open: set by duckdb_begin_measured, cleared by duckdb_end_measured.
 	//! A rollback does not reset the profiler while it is set.
 	atomic<bool> measured_bracket;

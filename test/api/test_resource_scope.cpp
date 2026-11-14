@@ -143,7 +143,7 @@ TEST_CASE("Test a scope opened from a reference on another thread", "[api]") {
 		REQUIRE(after.database.bytes_written == before.database.bytes_written);
 	}
 
-	SECTION("a reference whose connection is destroyed opens no scope") {
+	SECTION("a scope opened from a reference whose connection is destroyed adds to the database") {
 		auto gone = make_uniq<Connection>(db);
 		duckdb::weak_ptr<ClientContext> context = gone->context;
 		ResourceScopeReference reference;
@@ -156,62 +156,87 @@ TEST_CASE("Test a scope opened from a reference on another thread", "[api]") {
 		REQUIRE(context.expired());
 
 		auto before = ReadTotals(other);
-		RunScopeOnThread(reference);
+		auto figures = RunScopeOnThread(reference);
 		auto after = ReadTotals(other);
-		// the thread opened no scope: neither its CPU nor its bytes reached the database
-		REQUIRE(after.database.cpu_ns == before.database.cpu_ns);
-		REQUIRE(after.database.bytes_read == before.database.bytes_read);
-		REQUIRE(after.database.bytes_written == before.database.bytes_written);
-	}
-
-	SECTION("a scope opened from a reference holds its connection until it closes") {
-		auto held = make_uniq<Connection>(db);
-		duckdb::weak_ptr<ClientContext> context = held->context;
-		ResourceScopeReference reference;
-		{
-			ResourceScopeGuard guard(*held->context);
-			reference = ResourceScopeReference::Current();
-		}
-		auto before = ReadTotals(other);
-
-		std::atomic<bool> scope_open {false};
-		std::atomic<bool> connection_released {false};
-		std::thread thread([&]() {
-			ResourceScopeGuard guard(reference);
-			scope_open = true;
-			while (!connection_released) {
-				std::this_thread::yield();
-			}
-			SpendCpu();
-			ResourceScope::AddTransferredBytes(BYTES_READ, BYTES_WRITTEN);
-		});
-		while (!scope_open) {
-			std::this_thread::yield();
-		}
-		// the scope is open: releasing the connection's last other owner leaves it alive
-		held.reset();
-		REQUIRE(!context.expired());
-		connection_released = true;
-		thread.join();
-		// the scope closed and released the connection
-		REQUIRE(context.expired());
-
-		auto after = ReadTotals(other);
-		REQUIRE(after.database.cpu_ns - before.database.cpu_ns >= 20000000ULL);
+		// the scope opened: it added to the database's block, and to the block of the destroyed connection, which
+		// nobody reads
+		auto database_cpu = after.database.cpu_ns - before.database.cpu_ns;
+		INFO("database CPU ns " << database_cpu << ", inner " << figures.inner_ns << ", outer " << figures.outer_ns);
+		REQUIRE(database_cpu >= figures.inner_ns);
+		REQUIRE(database_cpu <= figures.outer_ns);
 		REQUIRE(after.database.bytes_read - before.database.bytes_read == BYTES_READ);
 		REQUIRE(after.database.bytes_written - before.database.bytes_written == BYTES_WRITTEN);
+		// no other connection's totals move
+		REQUIRE(after.connection.cpu_ns == before.connection.cpu_ns);
+		REQUIRE(after.connection.bytes_read == before.connection.bytes_read);
+		REQUIRE(after.connection.bytes_written == before.connection.bytes_written);
 	}
 }
 
-TEST_CASE("Test that a reference whose database is destroyed opens no scope", "[api]") {
+TEST_CASE("Test that a scope opened from a reference holds neither the connection nor the database", "[api]") {
+	auto db = make_uniq<DuckDB>(nullptr);
+	auto con = make_uniq<Connection>(*db);
+	duckdb::weak_ptr<DatabaseInstance> instance = db->instance;
+	duckdb::weak_ptr<ClientContext> context = con->context;
 	ResourceScopeReference reference;
+	{
+		ResourceScopeGuard guard(*con->context);
+		reference = ResourceScopeReference::Current();
+	}
+
+	std::atomic<bool> scope_open {false};
+	std::atomic<bool> owners_destroyed {false};
+	ThreadFigures figures;
+	std::thread thread([&]() {
+		auto outer_start = ThreadCpuNs();
+		{
+			ResourceScopeGuard guard(reference);
+			scope_open = true;
+			while (!owners_destroyed) {
+				std::this_thread::yield();
+			}
+			// the connection and the database are destroyed: the scope adds to the two blocks, which nobody reads
+			auto inner_start = ThreadCpuNs();
+			SpendCpu();
+			ResourceScope::AddTransferredBytes(BYTES_READ, BYTES_WRITTEN);
+			// a reference taken inside the scope names the same blocks
+			auto inner_reference = ResourceScopeReference::Current();
+			{
+				ResourceScopeGuard inner_guard(inner_reference);
+				ResourceScope::AddTransferredBytes(BYTES_READ, BYTES_WRITTEN);
+			}
+			figures.inner_ns = ThreadCpuNs() - inner_start;
+		}
+		figures.outer_ns = ThreadCpuNs() - outer_start;
+	});
+	while (!scope_open) {
+		std::this_thread::yield();
+	}
+	// the scope is open on the other thread, and this thread releases the last owner of the connection and then of
+	// the database: both are destroyed here, while the scope is open
+	con.reset();
+	REQUIRE(context.expired());
+	db.reset();
+	REQUIRE(instance.expired());
+	owners_destroyed = true;
+	thread.join();
+	REQUIRE(figures.inner_ns >= 20000000ULL);
+	REQUIRE(figures.outer_ns >= figures.inner_ns);
+}
+
+TEST_CASE("Test a scope opened from a reference whose database is destroyed", "[api]") {
+	ResourceScopeReference reference;
+	duckdb::weak_ptr<DatabaseInstance> instance;
 	{
 		DuckDB db(nullptr);
 		Connection con(db);
+		instance = db.instance;
 		ResourceScopeGuard guard(*con.context);
 		reference = ResourceScopeReference::Current();
 	}
-	// the thread opens no scope and adds to no counter of the destroyed database
+	// the reference does not extend the life of the database
+	REQUIRE(instance.expired());
+	// the scope opens and adds to the two blocks the reference holds, which nobody reads
 	auto figures = RunScopeOnThread(reference);
 	REQUIRE(figures.inner_ns >= 20000000ULL);
 }

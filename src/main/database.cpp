@@ -73,7 +73,7 @@ DBConfig::~DBConfig() {
 }
 
 DatabaseInstance::DatabaseInstance()
-    : cpu_ns(0), bytes_read(0), bytes_written(0), scope_key(ResourceScope::EnsureKey()), db_validity(*this) {
+    : resource_totals(make_shared_ptr<ResourceTotals>()), scope_key(ResourceScope::EnsureKey()), db_validity(*this) {
 	config.is_user_config = false;
 	create_api_v1 = nullptr;
 }

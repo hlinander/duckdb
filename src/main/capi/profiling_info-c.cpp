@@ -99,12 +99,15 @@ static void ReadResourceTotals(Connection &conn, duckdb_resource_totals &out) {
 	auto &profiler = QueryProfiler::Get(context);
 	auto &db = DatabaseInstance::GetDatabase(context);
 
-	out.connection.cpu_ns = profiler.cpu_ns.load(std::memory_order_relaxed);
-	out.connection.bytes_read = profiler.bytes_read.load(std::memory_order_relaxed);
-	out.connection.bytes_written = profiler.bytes_written.load(std::memory_order_relaxed);
-	out.database.cpu_ns = db.cpu_ns.load(std::memory_order_relaxed);
-	out.database.bytes_read = db.bytes_read.load(std::memory_order_relaxed);
-	out.database.bytes_written = db.bytes_written.load(std::memory_order_relaxed);
+	auto &connection_totals = *profiler.resource_totals;
+	auto &database_totals = *db.resource_totals;
+
+	out.connection.cpu_ns = connection_totals.cpu_ns.load(std::memory_order_relaxed);
+	out.connection.bytes_read = connection_totals.bytes_read.load(std::memory_order_relaxed);
+	out.connection.bytes_written = connection_totals.bytes_written.load(std::memory_order_relaxed);
+	out.database.cpu_ns = database_totals.cpu_ns.load(std::memory_order_relaxed);
+	out.database.bytes_read = database_totals.bytes_read.load(std::memory_order_relaxed);
+	out.database.bytes_written = database_totals.bytes_written.load(std::memory_order_relaxed);
 
 	auto marks = db.GetBufferPool().ReadMemoryMarks();
 	out.memory_bytes = marks.floor_bytes;

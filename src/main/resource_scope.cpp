@@ -65,8 +65,8 @@ void ResourceScope::SetKey(ResourceScopeKey key) {
 }
 
 //! Adds the CPU the scope spent since it last started to the totals it names
-static inline void StopAccumulating(uint64_t now, uint64_t start_ns, uint64_t &cpu_ns, QueryProfiler *connection,
-                                    DatabaseInstance *database) {
+static inline void StopAccumulating(uint64_t now, uint64_t start_ns, uint64_t &cpu_ns, ResourceTotals *connection,
+                                    ResourceTotals *database) {
 	if (now <= start_ns) {
 		return;
 	}
@@ -90,6 +90,12 @@ ResourceScope *ResourceScope::Accumulating(ResourceScope *innermost) {
 
 void ResourceScope::Open(optional_ptr<QueryProfiler> connection_p, DatabaseInstance &database_p,
                          ResourceScopeKind kind_p, bool read_clock_p) {
+	OpenInternal(connection_p ? connection_p->resource_totals.get() : nullptr, *database_p.resource_totals, kind_p,
+	             read_clock_p);
+}
+
+void ResourceScope::OpenInternal(ResourceTotals *connection_p, ResourceTotals &database_p, ResourceScopeKind kind_p,
+                                 bool read_clock_p) {
 	ResourceScope *innermost;
 	if (open || !TryGetSlot(innermost)) {
 		return;
@@ -104,7 +110,7 @@ void ResourceScope::Open(optional_ptr<QueryProfiler> connection_p, DatabaseInsta
 		start_ns = now;
 	}
 	parent = innermost;
-	connection = connection_p.get();
+	connection = connection_p;
 	database = &database_p;
 	operator_info = nullptr;
 	cpu_ns = 0;
@@ -193,7 +199,7 @@ void ResourceScope::AddTransferredBytes(idx_t bytes_read, idx_t bytes_written) {
 	}
 }
 
-void ResourceScopeGuard::Initialize(optional_ptr<ClientContext> context, DatabaseInstance &db) {
+void ResourceScopeGuard::Initialize(ResourceTotals *connection, ResourceTotals &database) {
 	if (!TryGetSlot(outer)) {
 		return;
 	}
@@ -202,7 +208,7 @@ void ResourceScopeGuard::Initialize(optional_ptr<ClientContext> context, Databas
 		// a plain scope does not open over an operator scope or a plain scope: that scope keeps accumulating
 		return;
 	}
-	scope.Open(context ? &QueryProfiler::Get(*context) : nullptr, db, ResourceScopeKind::PLAIN);
+	scope.OpenInternal(connection, database, ResourceScopeKind::PLAIN, true);
 }
 
 ResourceScopeReference ResourceScopeReference::Current() {
@@ -211,19 +217,11 @@ ResourceScopeReference ResourceScopeReference::Current() {
 	if (!TryGetSlot(innermost) || !innermost) {
 		return result;
 	}
-	// an owner that is being destroyed hands out no pointer: the reference stays empty
-	try {
-		weak_ptr<DatabaseInstance> database = innermost->database->shared_from_this();
-		weak_ptr<ClientContext> connection;
-		if (innermost->connection) {
-			connection = innermost->connection->context.shared_from_this();
-		}
-		result.database = std::move(database);
-		result.connection = std::move(connection);
-		result.has_connection = innermost->connection != nullptr;
-		result.has_database = true;
-	} catch (std::exception &) {
-		return ResourceScopeReference();
+	// a block is alive while a scope that names it is open: its owner holds it, or the guard that opened the scope
+	// from a reference does
+	result.database = innermost->database->shared_from_this();
+	if (innermost->connection) {
+		result.connection = innermost->connection->shared_from_this();
 	}
 	return result;
 }
@@ -273,7 +271,7 @@ uint64_t ResourceScope::Close() {
 void ResourceScope::AddTransferredBytes(idx_t bytes_read, idx_t bytes_written) {
 }
 
-void ResourceScopeGuard::Initialize(optional_ptr<ClientContext> context, DatabaseInstance &db) {
+void ResourceScopeGuard::Initialize(ResourceTotals *connection, ResourceTotals &database) {
 }
 
 ResourceScopeReference ResourceScopeReference::Current() {
@@ -286,28 +284,20 @@ ResourceScopeGuard::~ResourceScopeGuard() {
 #endif
 
 ResourceScopeGuard::ResourceScopeGuard(ClientContext &context) {
-	Initialize(&context, DatabaseInstance::GetDatabase(context));
+	Initialize(QueryProfiler::Get(context).resource_totals.get(),
+	           *DatabaseInstance::GetDatabase(context).resource_totals);
 }
 
 ResourceScopeGuard::ResourceScopeGuard(optional_ptr<ClientContext> context, DatabaseInstance &db) {
-	Initialize(context, db);
+	Initialize(context ? QueryProfiler::Get(*context).resource_totals.get() : nullptr, *db.resource_totals);
 }
 
-ResourceScopeGuard::ResourceScopeGuard(const ResourceScopeReference &reference) {
-	if (!reference.has_database) {
+ResourceScopeGuard::ResourceScopeGuard(const ResourceScopeReference &reference)
+    : database_totals(reference.database), connection_totals(reference.connection) {
+	if (!database_totals) {
 		return;
 	}
-	database_owner = reference.database.lock();
-	if (!database_owner) {
-		return;
-	}
-	if (reference.has_connection) {
-		connection_owner = reference.connection.lock();
-		if (!connection_owner) {
-			return;
-		}
-	}
-	Initialize(connection_owner.get(), *database_owner);
+	Initialize(connection_totals.get(), *database_totals);
 }
 
 } // namespace duckdb
