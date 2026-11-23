@@ -241,4 +241,32 @@ TEST_CASE("Test a scope opened from a reference whose database is destroyed", "[
 	REQUIRE(figures.inner_ns >= 20000000ULL);
 }
 
+TEST_CASE("Test that a read adds to the total of its source", "[api]") {
+	DuckDB db(nullptr);
+	Connection con(db);
+	const idx_t file_read = 300;
+	const idx_t http_read = 50;
+	const idx_t other_read = 7;
+
+	auto before = ReadTotals(con);
+	{
+		ResourceScopeGuard guard(*con.context);
+		ResourceScope::AddTransferredBytes(file_read, 11, TransferSource::FILE);
+		ResourceScope::AddTransferredBytes(http_read, 13, TransferSource::HTTP);
+		ResourceScope::AddTransferredBytes(other_read, 17);
+	}
+	auto after = ReadTotals(con);
+
+	// every read adds to the total of all reads, and a file or an HTTP read also to the total of its source
+	REQUIRE(after.connection.bytes_read - before.connection.bytes_read == file_read + http_read + other_read);
+	REQUIRE(after.connection.file_bytes_read - before.connection.file_bytes_read == file_read);
+	REQUIRE(after.connection.http_bytes_read - before.connection.http_bytes_read == http_read);
+	REQUIRE(after.database.bytes_read - before.database.bytes_read == file_read + http_read + other_read);
+	REQUIRE(after.database.file_bytes_read - before.database.file_bytes_read == file_read);
+	REQUIRE(after.database.http_bytes_read - before.database.http_bytes_read == http_read);
+	// written bytes have one total
+	REQUIRE(after.connection.bytes_written - before.connection.bytes_written == 11 + 13 + 17);
+	REQUIRE(after.database.bytes_written - before.database.bytes_written == 11 + 13 + 17);
+}
+
 #endif

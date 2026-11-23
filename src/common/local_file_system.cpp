@@ -498,7 +498,7 @@ void LocalFileSystem::Read(FileHandle &handle, void *buffer, int64_t nr_bytes, i
 			    "Could not read enough bytes from file \"%s\": attempted to read %llu bytes from location %llu",
 			    handle.path, nr_bytes, location);
 		}
-		ResourceScope::AddTransferredBytes(UnsafeNumericCast<idx_t>(bytes_read), 0);
+		ResourceScope::AddTransferredBytes(UnsafeNumericCast<idx_t>(bytes_read), 0, TransferSource::FILE);
 		read_buffer += bytes_read;
 		nr_bytes -= bytes_read;
 		location += UnsafeNumericCast<idx_t>(bytes_read);
@@ -517,7 +517,7 @@ int64_t LocalFileSystem::Read(FileHandle &handle, void *buffer, int64_t nr_bytes
 	}
 
 	if (bytes_read > 0) {
-		ResourceScope::AddTransferredBytes(UnsafeNumericCast<idx_t>(bytes_read), 0);
+		ResourceScope::AddTransferredBytes(UnsafeNumericCast<idx_t>(bytes_read), 0, TransferSource::FILE);
 	}
 
 	DUCKDB_LOG_FILE_SYSTEM_READ(handle, bytes_read, unix_handle.current_pos);
@@ -545,7 +545,7 @@ void LocalFileSystem::Write(FileHandle &handle, void *buffer, int64_t nr_bytes, 
 			                  "Could not write to file \"%s\" - attempted to write 0 bytes: %s", handle.path,
 			                  strerror(errno));
 		}
-		ResourceScope::AddTransferredBytes(0, UnsafeNumericCast<idx_t>(bytes_written));
+		ResourceScope::AddTransferredBytes(0, UnsafeNumericCast<idx_t>(bytes_written), TransferSource::FILE);
 		write_buffer += bytes_written;
 		bytes_to_write -= bytes_written;
 		current_location += UnsafeNumericCast<idx_t>(bytes_written);
@@ -567,7 +567,7 @@ int64_t LocalFileSystem::Write(FileHandle &handle, void *buffer, int64_t nr_byte
 			throw IOException({{"errno", std::to_string(errno)}}, "Could not write file \"%s\": %s", handle.path,
 			                  strerror(errno));
 		}
-		ResourceScope::AddTransferredBytes(0, UnsafeNumericCast<idx_t>(current_bytes_written));
+		ResourceScope::AddTransferredBytes(0, UnsafeNumericCast<idx_t>(current_bytes_written), TransferSource::FILE);
 		buffer = (void *)(data_ptr_cast(buffer) + current_bytes_written);
 		bytes_to_write -= current_bytes_written;
 	}

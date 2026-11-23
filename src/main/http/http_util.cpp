@@ -623,7 +623,7 @@ unique_ptr<HTTPResponse> HTTPClient::Request(BaseRequest &request) {
 			bytes_written = request.request_body_length;
 		}
 	}
-	ResourceScope::AddTransferredBytes(bytes_read, bytes_written);
+	ResourceScope::AddTransferredBytes(bytes_read, bytes_written, TransferSource::HTTP);
 	return response;
 }
 

@@ -422,11 +422,14 @@ typedef struct {
 } duckdb_query_progress_type;
 
 //! Cumulative CPU and IO totals of a connection or of a database. Nothing resets them: a reader takes the difference
-//! between two reads.
+//! between two reads. `file_bytes_read` and `http_bytes_read` are parts of `bytes_read`: the bytes the local file
+//! system read and the bytes the HTTP client read.
 typedef struct {
 	uint64_t cpu_ns;
 	uint64_t bytes_read;
 	uint64_t bytes_written;
+	uint64_t file_bytes_read;
+	uint64_t http_bytes_read;
 } duckdb_usage_totals;
 
 //! The totals of a connection and of its database, and the memory marks of the database's buffer pool.

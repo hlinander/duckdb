@@ -174,7 +174,7 @@ uint64_t ResourceScope::Close() {
 	return cpu_ns;
 }
 
-void ResourceScope::AddTransferredBytes(idx_t bytes_read, idx_t bytes_written) {
+void ResourceScope::AddTransferredBytes(idx_t bytes_read, idx_t bytes_written, TransferSource source) {
 	ResourceScope *innermost;
 	if (!TryGetSlot(innermost) || !innermost) {
 		return;
@@ -186,6 +186,17 @@ void ResourceScope::AddTransferredBytes(idx_t bytes_read, idx_t bytes_written) {
 		innermost->database->bytes_read.fetch_add(bytes_read, std::memory_order_relaxed);
 		if (innermost->connection) {
 			innermost->connection->bytes_read.fetch_add(bytes_read, std::memory_order_relaxed);
+		}
+		if (source == TransferSource::FILE) {
+			innermost->database->file_bytes_read.fetch_add(bytes_read, std::memory_order_relaxed);
+			if (innermost->connection) {
+				innermost->connection->file_bytes_read.fetch_add(bytes_read, std::memory_order_relaxed);
+			}
+		} else if (source == TransferSource::HTTP) {
+			innermost->database->http_bytes_read.fetch_add(bytes_read, std::memory_order_relaxed);
+			if (innermost->connection) {
+				innermost->connection->http_bytes_read.fetch_add(bytes_read, std::memory_order_relaxed);
+			}
 		}
 	}
 	if (bytes_written > 0) {
@@ -268,7 +279,7 @@ uint64_t ResourceScope::Close() {
 	return 0;
 }
 
-void ResourceScope::AddTransferredBytes(idx_t bytes_read, idx_t bytes_written) {
+void ResourceScope::AddTransferredBytes(idx_t bytes_read, idx_t bytes_written, TransferSource source) {
 }
 
 void ResourceScopeGuard::Initialize(ResourceTotals *connection, ResourceTotals &database) {

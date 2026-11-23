@@ -127,6 +127,12 @@ struct Attempt {
 	uint64_t DatabaseBytesRead() const {
 		return close.database.bytes_read - open.database.bytes_read;
 	}
+	uint64_t DatabaseFileBytesRead() const {
+		return close.database.file_bytes_read - open.database.file_bytes_read;
+	}
+	uint64_t DatabaseHttpBytesRead() const {
+		return close.database.http_bytes_read - open.database.http_bytes_read;
+	}
 	uint64_t ConnectionBytesWritten() const {
 		return close.connection.bytes_written - open.connection.bytes_written;
 	}
@@ -396,6 +402,9 @@ TEST_CASE("Test that the resource totals cover what the process spent", "[api]")
 			REQUIRE(attempt.DatabaseBytesRead() >= compressed_size);
 			REQUIRE(attempt.DatabaseBytesRead() < decompressed_size);
 			REQUIRE(attempt.tree.bytes_read > 0);
+			// the statement reads a local file alone
+			REQUIRE(attempt.DatabaseFileBytesRead() == attempt.DatabaseBytesRead());
+			REQUIRE(attempt.DatabaseHttpBytesRead() == 0);
 		}
 
 		// probe_bytes: the pool refuses the reservation of the join's pointer table, which holds

@@ -105,9 +105,13 @@ static void ReadResourceTotals(Connection &conn, duckdb_resource_totals &out) {
 	out.connection.cpu_ns = connection_totals.cpu_ns.load(std::memory_order_relaxed);
 	out.connection.bytes_read = connection_totals.bytes_read.load(std::memory_order_relaxed);
 	out.connection.bytes_written = connection_totals.bytes_written.load(std::memory_order_relaxed);
+	out.connection.file_bytes_read = connection_totals.file_bytes_read.load(std::memory_order_relaxed);
+	out.connection.http_bytes_read = connection_totals.http_bytes_read.load(std::memory_order_relaxed);
 	out.database.cpu_ns = database_totals.cpu_ns.load(std::memory_order_relaxed);
 	out.database.bytes_read = database_totals.bytes_read.load(std::memory_order_relaxed);
 	out.database.bytes_written = database_totals.bytes_written.load(std::memory_order_relaxed);
+	out.database.file_bytes_read = database_totals.file_bytes_read.load(std::memory_order_relaxed);
+	out.database.http_bytes_read = database_totals.http_bytes_read.load(std::memory_order_relaxed);
 
 	auto marks = db.GetBufferPool().ReadMemoryMarks();
 	out.memory_bytes = marks.floor_bytes;

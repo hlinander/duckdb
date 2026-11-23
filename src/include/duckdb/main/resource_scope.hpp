@@ -40,7 +40,7 @@ struct ResourceScopeKey {
 //! can add to a block after its owner is destroyed. Nothing resets a total, and the totals do not depend on the
 //! profiling configuration.
 struct ResourceTotals : public enable_shared_from_this<ResourceTotals> {
-	ResourceTotals() : cpu_ns(0), bytes_read(0), bytes_written(0) {
+	ResourceTotals() : cpu_ns(0), bytes_read(0), bytes_written(0), file_bytes_read(0), http_bytes_read(0) {
 	}
 
 	//! The CPU time threads spent in scopes that name this block, in nanoseconds
@@ -48,6 +48,20 @@ struct ResourceTotals : public enable_shared_from_this<ResourceTotals> {
 	//! The bytes transferred in scopes that name this block
 	atomic<uint64_t> bytes_read;
 	atomic<uint64_t> bytes_written;
+	//! The part of bytes_read that LocalFileSystem read, and the part the engine's HTTP client read. The remainder
+	//! of bytes_read has TransferSource::OTHER.
+	atomic<uint64_t> file_bytes_read;
+	atomic<uint64_t> http_bytes_read;
+};
+
+//! The function that performed a transfer
+enum class TransferSource : uint8_t {
+	//! A read or write system call of LocalFileSystem
+	FILE,
+	//! A request of the engine's HTTP client (HTTPClient::Request)
+	HTTP,
+	//! Any other caller
+	OTHER
 };
 
 //! The kind of a scope decides whether a plain scope opens above it
@@ -79,8 +93,10 @@ public:
 	//! Gives this engine copy the key of the copy that constructed the database (DatabaseInstance::scope_key).
 	//! A copy that is not given the key opens no scope and counts nothing.
 	DUCKDB_API static void SetKey(ResourceScopeKey key);
-	//! Adds the bytes of one transfer to the totals of the calling thread's innermost scope (if any)
-	DUCKDB_API static void AddTransferredBytes(idx_t bytes_read, idx_t bytes_written);
+	//! Adds the bytes of one transfer to the totals of the calling thread's innermost scope (if any).
+	//! The bytes read also add to the total of "source", where it is FILE or HTTP.
+	DUCKDB_API static void AddTransferredBytes(idx_t bytes_read, idx_t bytes_written,
+	                                           TransferSource source = TransferSource::OTHER);
 
 	//! Opens this scope above the calling thread's innermost scope.
 	//! The scope names the totals of "connection" (if any) and of "database".
